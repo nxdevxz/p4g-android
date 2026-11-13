@@ -25,6 +25,7 @@
 #include "nvn_pipeline.h"
 #include "nvn_ultrawide.h"
 #include "platform.h"
+#include "prewarm_budget.h"
 
 namespace nx::nvn {
 
@@ -628,14 +629,20 @@ VkPipeline graphics_pipeline(const PipelineKey& key, const ProgramLayout& layout
 void pipeline_warm_step() {
     adopt_finished();
     g_prewarm_inflight = g_inflight.size();
-    // 0: disabled; 1: bounded background work; 2: compile every currently available learned pipeline and wait.
-    // Aggressive mode cannot invent first-run keys: it only front-loads pipelines recorded by earlier sessions.
+    // 0: disabled; 1: background; 2: intensive background. Never wait for a whole prewarm batch during gameplay.
+    // Prewarming only uses pipelines recorded by earlier sessions.
     static const int mode = [] {
         const char* e = std::getenv("NX_PIPE_PREWARM");
         if (pool().threads == 0 || (e && e[0] == '0')) return 0;
         return e && e[0] == '2' ? 2 : 1;
     }();
     if (!mode) return;
+    static const bool light = [] {
+        const char* e = std::getenv("NX_PIPE_PREWARM_LOAD");
+        return e && std::strcmp(e, "light") == 0;
+    }();
+    static PrewarmBudget frame_budget;
+    frame_budget.begin(g_frame.load(std::memory_order_relaxed));
     static size_t cursor = 0;
     static bool loaded = false;
     static std::vector<WarmRec> recs;
@@ -673,14 +680,16 @@ void pipeline_warm_step() {
         return size_t(std::clamp(n, 1L, 1024L));
     }();
     const uint64_t t0 = plat::monotonic_ns();
-    const size_t step_scan_limit = mode == 2 ? recs.size() : std::min(recs.size(), scan_limit);
-    // Bound each blocking batch so a large learned cache does not allocate every VkGraphicsPipelineCreateInfo at once.
-    const size_t step_inflight_limit = mode == 2 ? std::max<size_t>(inflight_limit, 256) : inflight_limit;
-    std::vector<std::shared_ptr<PipeTask>> aggressive_tasks;
-    // Each start builds shader modules on this thread: at most 3 per submit in background mode.
-    size_t started = 0;
+    const uint64_t step_budget = mode == 2 ? std::min<uint64_t>(budget_ns * 2, 10000000) :
+            light ? std::min<uint64_t>(budget_ns, 250000) : budget_ns;
+    const unsigned start_limit = mode == 2 ? 6 : light ? 1 : 3;
+    const size_t step_scan_limit = mode == 2 ? std::min<size_t>(recs.size(), 128) :
+            std::min(recs.size(), light ? std::min<size_t>(scan_limit, 16) : scan_limit);
+    const size_t step_inflight_limit = mode == 2 ? std::min<size_t>(inflight_limit * 2, 256) :
+            light ? std::min<size_t>(inflight_limit, 8) : inflight_limit;
+    // Shader module preparation stays on this thread; cap work per frame, not per submission.
     for (size_t scanned = 0; scanned < step_scan_limit && g_prewarm_inflight < step_inflight_limit; scanned++) {
-        if (mode == 1 && (plat::monotonic_ns() - t0 > budget_ns || started >= 3)) break;
+        if (!frame_budget.available(plat::monotonic_ns() - t0, step_budget, start_limit)) break;
         size_t i = cursor++ % recs.size();
         pass_scanned++;
         if (done[i]) continue;
@@ -699,22 +708,17 @@ void pipeline_warm_step() {
         t->build = prepare_graphics_pipeline(key, program_layout(stages));
         g_inflight.emplace(ck, t);
         enqueue(t);
-        if (mode == 2) aggressive_tasks.push_back(t);
         g_prewarm_inflight++;
-        started++, pass_progress++;
+        frame_budget.started++, pass_progress++;
         note_pipeline_prewarmed();
     }
-    if (mode == 1 && pass_scanned >= recs.size()) {
+    if (pass_scanned >= recs.size()) {
         if (!pass_progress) idle_skip = 30;
         pass_scanned = pass_progress = 0;
     }
-    if (mode == 2 && !aggressive_tasks.empty()) {
-        log("nvn/vk: aggressive prewarm: waiting for %zu known pipelines", aggressive_tasks.size());
-        for (const auto& task : aggressive_tasks) task->wait();
-        adopt_finished();
-    }
     // Count the ones that finished (adopt_finished erased them from g_inflight): recompute the in-flight count.
     g_prewarm_inflight = g_inflight.size();
+    frame_budget.spent_ns += plat::monotonic_ns() - t0;
 }
 
 
@@ -1295,4 +1299,3 @@ void forget_image_views(const GpuImage& img) {
 }
 
 }  // namespace nx::nvn
-

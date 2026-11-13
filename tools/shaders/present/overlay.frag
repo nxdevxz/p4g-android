@@ -31,16 +31,18 @@ void main() {
     vec2 v = vec2((up.x - s.x) * p.off.w, up.y - s.y);
     float d = length(v);
     if (d < s.z) {
-        mix_to(1.0, a);
+        // Neutral translucent fill; pressed shapes carry a larger alpha from touch_layout.
+        mix_to(0.46, a * 0.75);
         uint g1 = uint(id) & 31u, g2 = uint(id) >> 5u;
         if (g1 != 0u) {
             vec2 q = v / (s.z * 0.1) + vec2(g2 != 0u ? 5.5 : 2.5, 3.5);
             float k = a > 0.0 ? min(1.0, a * 3.5) : 1.0;
-            mix_to(0.0, 0.6 * k * label(g1, g2, q - vec2(0.35)));
-            mix_to(1.0, k * label(g1, g2, q));
+            mix_to(0.08, 0.45 * k * label(g1, g2, q - vec2(0.25)));
+            mix_to(0.92, k * label(g1, g2, q));
         }
-    } else if (d < s.z + 0.005) {
-        mix_to(1.0, min(1.0, a * 3.0));
+    } else if (d < s.z + 0.0025) {
+        float edge = 1.0 - smoothstep(s.z + 0.001, s.z + 0.0025, d);
+        mix_to(0.82, min(0.85, a * 2.2) * edge);
     } else {
         discard;
     }

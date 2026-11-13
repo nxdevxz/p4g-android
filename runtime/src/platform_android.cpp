@@ -50,6 +50,7 @@
 #include "platform.h"
 #include "platform_android.h"
 #include "android_surface_size.h"
+#include "frame_history.h"
 #if NX_NCE
 #include "nce/nce.h"
 #endif
@@ -779,6 +780,13 @@ void request_immersive() {
 // Frames presented so far, for the launcher's FPS counter (GameActivity.nativeFrames, in the game's own process).
 // RegisterNatives below also keeps this callable when hidden visibility and section GC discard name lookup.
 static jlong native_frames(JNIEnv*, jclass) { return jlong(nx::g_frame.load()); }
+static jfloatArray native_frame_times(JNIEnv* env, jclass) {
+    float samples[nx::FrameHistory::capacity];
+    const auto count = jsize(nx::g_frame_history.snapshot(samples));
+    jfloatArray result = env->NewFloatArray(count);
+    if (result && count) env->SetFloatArrayRegion(result, 0, count, samples);
+    return result;
+}
 extern "C" JNIEXPORT jlong JNICALL Java_io_github_belmantegu_wonderrecomp_GameActivity_nativeFrames(JNIEnv*, jclass) {
     return native_frames(nullptr, nullptr);
 }
@@ -794,6 +802,13 @@ extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, vo
     if (activity->env->RegisterNatives(activity_class, &frames_method, 1) != JNI_OK &&
         activity->env->ExceptionCheck())
         activity->env->ExceptionClear();
+    // Other games sharing the runtime need not implement this optional overlay API.
+    if (activity->env->GetStaticMethodID(activity_class, "nativeFrameTimes", "()[F")) {
+        JNINativeMethod method{const_cast<char*>("nativeFrameTimes"), const_cast<char*>("()[F"),
+                               reinterpret_cast<void*>(native_frame_times)};
+        activity->env->RegisterNatives(activity_class, &method, 1);
+    }
+    if (activity->env->ExceptionCheck()) activity->env->ExceptionClear();
     activity->env->DeleteLocalRef(activity_class);
     if (g_ui_pipe[0] < 0 && pipe2(g_ui_pipe, O_NONBLOCK | O_CLOEXEC) == 0)
         ALooper_addFd(ALooper_forThread(), g_ui_pipe[0], ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT, on_ui_request, nullptr);

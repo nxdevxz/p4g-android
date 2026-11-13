@@ -1,50 +1,21 @@
-#include <cstdlib>
-// Android host (NativeActivity): memory (mmap at fixed addresses), pthreads, the app's window (ANativeWindow),
-// game controllers + touch, AAudio, the Vulkan loader and android surface, a signal crash handler and
-// android_main. Game data lives in the app's external files dir (see docs/ANDROID.md):
-//   <files>/analysis/{main,sdk}.bin   module images (tools/nso2bin.py)
-//   <files>/extract/romfs/...         the RomFS
-//   <files>/user/...                  saves
-//   <files>/config.txt                optional: resolution=WxH
+// Android audio output; stream control stays outside the real-time callbacks.
 #include <aaudio/AAudio.h>
-#include <android/log.h>
-#include <android/native_window.h>
-#include <android/window.h>
-#include <android_native_app_glue.h>
-#include <dlfcn.h>
-#include <fcntl.h>
-#include <jni.h>
-#include <pthread.h>
-#include <sched.h>
-#include <signal.h>
-#include <sys/mman.h>
 #include <time.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
-#include <cerrno>
-#include <cmath>
+#include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
-#include <filesystem>
-#include <fstream>
 #include <mutex>
-#include <string>
 #include <thread>
 #include <vector>
 
-#define VK_NO_PROTOTYPES
-#define VK_USE_PLATFORM_ANDROID_KHR
-#include <vulkan/vulkan.h>
-
-#include <nx/game.h>
 #include <nx/runtime.h>
-
-#include "kernel.h"
 #include "platform.h"
-#include "platform_android.h"
+#include "audio_ring.h"
 
 // Android audio out: AAudio (split from platform_android.cpp).
 namespace nx::plat {
@@ -62,6 +33,10 @@ struct Pending {
     void* ctx;
 };
 std::mutex g_audio;
+// Never acquired by the AAudio callbacks. Serializes stream lifetime and timestamp queries.
+std::mutex g_stream_control;
+bool g_enabled = false, g_paused = false;
+std::atomic<bool> g_disconnected{false};
 std::condition_variable g_audio_ready;
 std::vector<uint32_t> g_ring(kRingFrames);  // one stereo s16 frame per element
 uint64_t g_written = 0, g_read = 0;         // frames, since the stream opened
@@ -73,12 +48,14 @@ uint32_t g_reserve_frames = 480;  // under g_audio; normally two bursts, capped 
 bool g_priming = true;
 AudioDone g_done = nullptr;
 AAudioStream* g_stream = nullptr;
-// Per ~2 s, logged from the callback: how the device pulls (callbacks, frames per call) and how often the game's
+// Per ~2 s, logged from the completion worker: how the device pulls (callbacks, frames per call) and how often the game's
 // buffers ran out (underruns: silence played, and the game's buffers come back late, its clock stalls).
 struct CbStats {
     uint64_t from_ns = 0, calls = 0, frames = 0, underruns = 0, silent_frames = 0, max_gap_ns = 0, last_ns = 0;
     int32_t min_frames = 1 << 30, max_frames = 0;
 } g_cb;
+
+void audio_reopen_if_disconnected();
 
 uint32_t reserve_for_burst(uint64_t frames) {
     return uint32_t(std::clamp<uint64_t>(frames * 2, 480, kRingFrames / 2));
@@ -88,17 +65,37 @@ uint32_t reserve_for_burst(uint64_t frames) {
 // made possible by audio_submit(), so a renderer submitting while holding its own lock cannot deadlock itself.
 void audio_completions() {
     for (;;) {
-        void* ctx;
+        void* ctx = nullptr;
+        bool completed = false;
+        CbStats stats;
+        uint64_t now;
         {
             std::unique_lock lk(g_audio);
-            g_audio_ready.wait(lk, [] {
+            g_audio_ready.wait_for(lk, std::chrono::milliseconds(250), [] {
                 const uint64_t due = g_read + g_reserve_frames + g_delay_frames.load(std::memory_order_relaxed);
                 return !g_pending.empty() && g_pending.front().end <= due;
             });
-            ctx = g_pending.front().ctx;
-            g_pending.pop_front();
+            const uint64_t due = g_read + g_reserve_frames + g_delay_frames.load(std::memory_order_relaxed);
+            if (!g_pending.empty() && g_pending.front().end <= due) {
+                ctx = g_pending.front().ctx;
+                g_pending.pop_front();
+                completed = true;
+            }
+            now = monotonic_ns();
+            if (g_cb.calls && now - g_cb.from_ns >= 2'000'000'000ull) {
+                stats = g_cb;
+                g_cb = {};
+            }
         }
-        g_done(ctx);
+        if (stats.calls && (stats.underruns || std::getenv("NX_AUDIO_STATS")))
+            nx::log("audio: %llu callbacks in %.1f s (%d..%d frames, longest %.1f ms apart); %llu underruns, %.0f ms silence",
+                    (unsigned long long)stats.calls, double(now - stats.from_ns) / 1e9, stats.min_frames, stats.max_frames,
+                    double(stats.max_gap_ns) / 1e6, (unsigned long long)stats.underruns, double(stats.silent_frames) / 48.0);
+        {
+            std::lock_guard stream_lock(g_stream_control);
+            audio_reopen_if_disconnected();
+        }
+        if (completed) g_done(ctx);
     }
 }
 
@@ -111,14 +108,6 @@ void cb_stats(int32_t frames, size_t missing_bytes) {
     s.calls++, s.frames += uint64_t(frames);
     s.min_frames = std::min(s.min_frames, frames), s.max_frames = std::max(s.max_frames, frames);
     if (missing_bytes) s.underruns++, s.silent_frames += missing_bytes / 4;
-    if (now - s.from_ns < 2'000'000'000ull) return;
-    if (s.underruns || std::getenv("NX_AUDIO_STATS"))
-        nx::log("audio: device pulled %llu times in %.1f s (%d..%d frames, longest %.1f ms apart); %llu underruns, "
-                "%.0f ms of silence", (unsigned long long)s.calls, double(now - s.from_ns) / 1e9, s.min_frames,
-                s.max_frames, double(s.max_gap_ns) / 1e6, (unsigned long long)s.underruns,
-                double(s.silent_frames) / 48.0);
-    s = {};
-    s.from_ns = s.last_ns = now;
 }
 
 aaudio_data_callback_result_t audio_cb(AAudioStream*, void*, void* out, int32_t frames) {
@@ -132,23 +121,24 @@ aaudio_data_callback_result_t audio_cb(AAudioStream*, void*, void* out, int32_t 
         const uint64_t available = g_written - g_read;
         if (g_priming && available >= g_reserve_frames) g_priming = false;
         const uint64_t n = g_priming ? 0 : std::min<uint64_t>(uint64_t(frames), available);
-        for (uint64_t k = 0; k < n; k++) dst[k] = g_ring[(g_read + k) % kRingFrames];
+        read_audio_ring(dst, g_ring.data(), kRingFrames, g_read, size_t(n));
         g_read += n;
         g_device += uint64_t(frames);
         missing = size_t(frames) - size_t(n);
         if (missing) std::memset(dst + n, 0, missing * 4);  // underrun: silence
         if (missing) g_priming = true;
+        cb_stats(frames, missing * 4);
     }
     g_audio_ready.notify_one();
-    cb_stats(frames, missing * 4);
     return AAUDIO_CALLBACK_RESULT_CONTINUE;
 }
 
 void audio_error_cb(AAudioStream*, void*, aaudio_result_t error) {
-    if (error == AAUDIO_ERROR_DISCONNECTED) nx::log("audio: AAudio stream disconnected");
+    if (error == AAUDIO_ERROR_DISCONNECTED) g_disconnected.store(true, std::memory_order_relaxed);
 }
 
 bool audio_stream_create() {
+    g_disconnected.store(false, std::memory_order_relaxed);
     AAudioStreamBuilder* b = nullptr;
     if (AAudio_createStreamBuilder(&b) != AAUDIO_OK) return false;
     AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_I16);
@@ -165,6 +155,10 @@ bool audio_stream_create() {
         std::lock_guard lk(g_audio);
         g_reserve_frames = reserve_for_burst(uint64_t(std::max(burst, 1)));
         g_priming = true;
+        // AAudio timestamps restart at zero for every new stream; ring positions do not.
+        g_device = 0;
+        g_latency_ns.store(0, std::memory_order_relaxed);
+        g_cb = {};
     }
     if (AAudioStream_requestStart(g_stream) != AAUDIO_OK) {
         AAudioStream_close(g_stream);
@@ -181,7 +175,9 @@ bool audio_stream_create() {
 }
 
 void audio_reopen_if_disconnected() {
-    if (g_stream && AAudioStream_getState(g_stream) != AAUDIO_STREAM_STATE_DISCONNECTED) return;
+    if (!g_enabled || g_paused) return;
+    if (g_stream && !g_disconnected.load(std::memory_order_relaxed) &&
+        AAudioStream_getState(g_stream) != AAUDIO_STREAM_STATE_DISCONNECTED) return;
     if (g_stream) AAudioStream_close(g_stream);
     g_stream = nullptr;
     audio_stream_create();
@@ -189,17 +185,21 @@ void audio_reopen_if_disconnected() {
 }  // namespace
 
 bool audio_open(AudioDone done) {
+    std::lock_guard stream_lock(g_stream_control);
     g_done = done;
     // NX_MUTE=1 (and headless test runs): no device, the callers pace themselves with a timer (as on Windows and macOS).
     if (headless() || std::getenv("NX_MUTE") || !audio_stream_create()) return false;
+    g_enabled = true;
     std::thread(audio_completions).detach();
     return true;
 }
 
 void audio_pause(bool paused) {
-    if (!g_stream) return;
+    std::lock_guard stream_lock(g_stream_control);
+    g_paused = paused;
+    if (!g_enabled) return;
     if (paused) {
-        AAudioStream_requestPause(g_stream);
+        if (g_stream) AAudioStream_requestPause(g_stream);
     } else {
         audio_reopen_if_disconnected();
         if (g_stream && AAudioStream_requestStart(g_stream) == AAUDIO_ERROR_DISCONNECTED)
@@ -224,15 +224,15 @@ static void measure_latency(uint64_t start, uint64_t read, uint64_t device) {
 }
 
 bool audio_submit(const void* data, size_t bytes, void* ctx) {
+    std::lock_guard stream_lock(g_stream_control);
     audio_reopen_if_disconnected();
-    if (!g_stream) return false;
+    if (!g_enabled || !g_stream) return false;
     uint64_t start, read, device;
     {
         std::lock_guard lk(g_audio);
         start = g_written, read = g_read, device = g_device;
         const uint64_t n = std::min<uint64_t>(bytes / 4, kRingFrames - (g_written - g_read));  // never more than a full ring
-        const auto* src = static_cast<const uint8_t*>(data);
-        for (uint64_t k = 0; k < n; k++) std::memcpy(&g_ring[(g_written + k) % kRingFrames], src + 4 * k, 4);
+        write_audio_ring(g_ring.data(), kRingFrames, g_written, data, size_t(n));
         g_written += n;
         g_pending.push_back({g_written, ctx});
     }
@@ -257,4 +257,3 @@ uint32_t audio_queued() {
 }
 
 }  // namespace nx::plat
-

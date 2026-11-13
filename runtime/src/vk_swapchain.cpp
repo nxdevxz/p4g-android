@@ -12,6 +12,7 @@
 
 #include "vk_bridge_shared.h"
 #include "vk_present.h"
+#include "frame_history.h"
 
 namespace nx::vk {
 
@@ -628,6 +629,11 @@ void w_vkQueuePresentKHR(CPU& c) {
     // Worst frame (time between presents) of the interval: what is felt as stutter.
     static uint64_t prev_present = 0, worst = 0;
     uint64_t now_ns = plat::monotonic_ns();
+    static const bool frame_graph = [] {
+        const char* value = std::getenv("NX_OVERLAY_FRAME_TIME");
+        return value && value[0] == '1';
+    }();
+    if (frame_graph) nx::g_frame_history.record(now_ns);
     if (prev_present) worst = std::max(worst, now_ns - prev_present);
     prev_present = now_ns;
     if (frames == 0) game::first_frame();
