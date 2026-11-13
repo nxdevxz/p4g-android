@@ -231,6 +231,7 @@ public class Launcher extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         Lang.load(this);
+        applyLauncherOrientation();
         P4gTheme.apply(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         options.add(new Option("RESOLUTION", "Resolução de saída", "Output resolution",
@@ -311,6 +312,11 @@ public class Launcher extends Activity {
     }
 
     boolean readyForPlay;
+    void applyLauncherOrientation() {
+        boolean landscape = getSharedPreferences("launcher", MODE_PRIVATE).getBoolean("landscape", false);
+        setRequestedOrientation(landscape ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+    }
     int refreshGeneration;
 
     @Override protected void onDestroy() {
@@ -343,7 +349,7 @@ public class Launcher extends Activity {
         hint.setTextSize(13);
         hint.setPadding(0, 0, 0, dp(8));
         body.addView(hint);
-        card.addView(body);
+        card.addView(body, new LinearLayout.LayoutParams(-1, -2));
         // A fresh visit to the launcher always starts compact. Keeping this state in
         // SharedPreferences made every drawer come back open after the user expanded it once.
         body.setVisibility(open ? View.VISIBLE : View.GONE);
@@ -387,11 +393,20 @@ public class Launcher extends Activity {
         status.setPadding(0, dp(6), 0, dp(14));
         root.addView(status);
 
-        addRow(root, t("Idioma do launcher", "Launcher language"),
+        LinearLayout launcherSettings = settingsGroup(root, "launcher", t("Configurações do launcher", "Launcher settings"),
+                t("Idioma e orientação", "Language and orientation"), false);
+        addRow(launcherSettings, t("Idioma do launcher", "Launcher language"),
                 Lang.isPortuguese() ? "Português" : "English", v -> {
                     Lang.toggle(this);
                     build(readyForPlay);
                     refresh();
+                });
+        addRow(launcherSettings, t("Orientação do launcher", "Launcher orientation"),
+                getSharedPreferences("launcher", MODE_PRIVATE).getBoolean("landscape", false)
+                        ? t("Horizontal", "Landscape") : t("Vertical", "Portrait"), v -> {
+                    SharedPreferences settings = getSharedPreferences("launcher", MODE_PRIVATE);
+                    settings.edit().putBoolean("landscape", !settings.getBoolean("landscape", false)).apply();
+                    applyLauncherOrientation();
                 });
 
         if (!ready) {
@@ -472,7 +487,8 @@ public class Launcher extends Activity {
             else prepare();
         });
         P4gTheme.section(content, t("Saves e mods", "Saves & mods"));
-        P4gTheme.section(support, t("Diagnóstico", "Diagnostics"));
+        LinearLayout diagnostics = settingsGroup(support, "logs", t("Logs e diagnóstico", "Logs & diagnostics"), "", false);
+        LinearLayout overlay = settingsGroup(support, "overlay", "Overlay", t("Estatísticas durante o jogo", "In-game statistics"), false);
         TextView diagnosticHelp = new TextView(this);
         diagnosticHelp.setText(t(
                 "Ative as estatísticas para registrar renderização, esperas e compilação de pipelines. Isso pode reduzir o desempenho. Jogue a mesma parte, exporte os logs e desative as estatísticas ao terminar.",
@@ -480,8 +496,7 @@ public class Launcher extends Activity {
         diagnosticHelp.setTextColor(Color.LTGRAY);
         diagnosticHelp.setTextSize(14);
         diagnosticHelp.setPadding(0, dp(4), 0, dp(8));
-        support.addView(diagnosticHelp);
-        P4gTheme.section(support, "Overlay");
+        diagnostics.addView(diagnosticHelp);
         P4gTheme.section(support, t("Comunidade", "Community"));
         addRow(support, "GitHub", t("Abrir", "Open"),
                 v -> openExternal("https://github.com/nxdevxz/p4g-android"));
@@ -519,11 +534,12 @@ public class Launcher extends Activity {
             boolean quickOption = o.key.equals("RESOLUTION") || o.key.equals("NX_STRETCH") ||
                     o.key.equals("NX_FPS_CAP") || o.key.equals("NX_TOUCH_SHOW");
             (quickOption ? quick :
-                    o.key.equals("NX_TRACE_PERF") || o.key.equals("NX_SHOW_FPS") || o.key.startsWith("NX_OVERLAY_")
-                            ? support : controlOptions ? controls : graphics).addView(row);
+                    o.key.equals("NX_TRACE_PERF") ? diagnostics :
+                    o.key.equals("NX_SHOW_FPS") || o.key.startsWith("NX_OVERLAY_")
+                            ? overlay : controlOptions ? controls : graphics).addView(row);
         }
         addDriverRow(graphics);
-        addLogsRow(support);
+        addLogsRow(diagnostics);
 
         LinearLayout edit = new LinearLayout(this);
         edit.setOrientation(LinearLayout.HORIZONTAL);
@@ -627,6 +643,8 @@ public class Launcher extends Activity {
         addModsRow(content);
 
         ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(P4gTheme.BACKGROUND);
+        scroll.setFillViewport(true);
         scroll.addView(root);
         setContentView(scroll);
     }
