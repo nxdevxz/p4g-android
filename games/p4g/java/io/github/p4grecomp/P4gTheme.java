@@ -13,11 +13,11 @@ import android.widget.TextView;
 /** Shared launcher palette; does not change the game's renderer or touch overlay. */
 final class P4gTheme {
     static final int BACKGROUND = Color.rgb(18, 20, 24);
-    static final int PANEL = Color.rgb(29, 32, 38);
-    static final int YELLOW = Color.rgb(225, 194, 112);
+    static final int PANEL = Color.rgb(35, 40, 51);
+    static final int YELLOW = Color.rgb(255, 208, 48);
     static final int INK = Color.rgb(20, 20, 20);
     static final int TEXT = Color.rgb(236, 238, 242);
-    static final int MUTED = Color.rgb(162, 168, 180);
+    static final int MUTED = Color.rgb(185, 194, 211);
 
     private P4gTheme() {}
 
@@ -59,4 +59,3 @@ final class P4gTheme {
         root.addView(heading);
     }
 }
-

@@ -270,11 +270,11 @@ public class ControlsEditor extends Activity {
                 float cx = pos[i][0] * w, cy = pos[i][1] * h, r = radius(i);
                 boolean bad = touches(i), held = GROUP[i] == group;
                 paint.setStyle(Paint.Style.FILL);
-                paint.setColor(bad ? Color.argb(150, 230, 0, 18) : Color.argb(held ? 150 : 65, 255, 224, 0));
+                paint.setColor(bad ? Color.argb(150, 230, 0, 18) : Color.argb(held ? 125 : 55, 145, 150, 158));
                 c.drawCircle(cx, cy, r, paint);
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(dp(2));
-                paint.setColor(bad ? Color.rgb(255, 60, 60) : P4gTheme.YELLOW);
+                paint.setColor(bad ? Color.rgb(255, 60, 60) : Color.argb(held ? 220 : 125, 218, 222, 228));
                 c.drawCircle(cx, cy, r, paint);
                 paint.setStyle(Paint.Style.FILL);
                 paint.setColor(Color.WHITE);
@@ -333,4 +333,3 @@ public class ControlsEditor extends Activity {
         }
     }
 }
-

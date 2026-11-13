@@ -53,6 +53,7 @@ public class Launcher extends Activity {
         final String key, pt, en;
         final String[] values, labelsPt, labelsEn;
         int pick;
+        final int defaultPick;
 
         Option(String key, String pt, String en, String[] values, String[] labelsPt, String[] labelsEn, int pick) {
             this.key = key;
@@ -62,6 +63,12 @@ public class Launcher extends Activity {
             this.labelsPt = labelsPt;
             this.labelsEn = labelsEn;
             this.pick = pick;
+            this.defaultPick = pick;
+        }
+
+        void select(String value) {
+            pick = defaultPick;
+            for (int i = 0; i < values.length; i++) if (values[i].equals(value)) pick = i;
         }
     }
 
@@ -257,13 +264,19 @@ public class Launcher extends Activity {
             options.add(new Option("NX_OVERLAY_" + metric, metric, metric, new String[] {"0", "1"},
                     new String[] {"Desativado", "Ativado"}, new String[] {"Off", "On"}, 0));
         }
+        options.add(new Option("NX_OVERLAY_FRAME_TIME", "Gráfico de tempo por quadro", "Frame time graph",
+                new String[] {"0", "1"}, new String[] {"Desativado", "Ativado"},
+                new String[] {"Off", "On"}, 0));
         options.add(new Option("NX_TRACE_PERF", "Estatísticas detalhadas de desempenho", "Detailed performance logging",
                 new String[] {"0", "1"}, new String[] {"Desativado", "Ativado"},
                 new String[] {"Off", "On"}, 0));
         options.add(new Option("NX_PIPE_PREWARM", "Pré-compilação de pipelines (experimental)",
                 "Pipeline prewarming (experimental)", new String[] {"1", "2", "0"},
-                new String[] {"Em segundo plano (recomendado)", "Agressivo (carregamento maior)", "Desativado"},
-                new String[] {"Background (recommended)", "Aggressive (longer loading)", "Off"}, 0));
+                new String[] {"Em segundo plano", "Intensa (mais CPU)", "Desativado"},
+                new String[] {"Background", "Intensive (more CPU)", "Off"}, 0));
+        options.add(new Option("NX_PIPE_PREWARM_LOAD", "Carga da pré-compilação em segundo plano", "Background prewarm load",
+                new String[] {"light", "standard"}, new String[] {"Leve", "Padrão"},
+                new String[] {"Light", "Standard"}, 1));
         options.add(new Option("NX_AFFINITY", "Afinidade de CPU (experimental)", "CPU affinity (experimental)",
                 new String[] {"0", "2", "1"},
                 new String[] {"Sistema Android", "Otimizada (recomendada)", "Separar threads de quadro"},
@@ -389,7 +402,7 @@ public class Launcher extends Activity {
 
         TextView title = new TextView(this);
         title.setText("Persona 4 Golden");
-        title.setTextColor(P4gTheme.TEXT);
+        title.setTextColor(P4gTheme.YELLOW);
         title.setPadding(0, dp(20), 0, dp(4));
         title.setTextSize(28);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
@@ -416,6 +429,17 @@ public class Launcher extends Activity {
                     build(readyForPlay);
                     refresh();
                 });
+
+        addRow(launcherSettings, t("Restaurar idioma e orientação", "Reset language and orientation"),
+                t("Restaurar", "Reset"), v -> new AlertDialog.Builder(this)
+                        .setMessage(t("Usar o idioma do sistema e orientação vertical?", "Use the system language and portrait orientation?"))
+                        .setNegativeButton(t("Cancelar", "Cancel"), null)
+                        .setPositiveButton(t("Restaurar", "Reset"), (dialog, which) -> {
+                            getSharedPreferences("launcher", MODE_PRIVATE).edit().remove("language").remove("landscape").apply();
+                            Lang.load(this);
+                            applyLauncherOrientation();
+                            refresh();
+                        }).show());
         addRow(launcherSettings, t("Orientação do launcher", "Launcher orientation"),
                 getSharedPreferences("launcher", MODE_PRIVATE).getBoolean("landscape", false)
                         ? t("Horizontal", "Landscape") : t("Vertical", "Portrait"), v -> {
@@ -477,10 +501,19 @@ public class Launcher extends Activity {
                 t("Driver e ajustes experimentais", "Driver and experimental settings"), false);
         LinearLayout controls = settingsGroup(root, "controls", t("Controles", "Controls"),
                 t("Toque, sensibilidade e posição", "Touch, sensitivity and layout"), false);
+        LinearLayout overlay = settingsGroup(root, "overlay", "Overlay",
+                t("Estatísticas durante o jogo", "In-game statistics"), false);
+        LinearLayout profiles = settingsGroup(root, "profiles", t("Perfis de configuração", "Settings profiles"),
+                t("Salva as opções de tela, gráficos, controles e overlay. Layout, driver e idioma são independentes.",
+                        "Stores display, graphics, controls and overlay options. Layout, driver and language are separate."), false);
+        for (int slot = 1; slot <= 3; slot++) {
+            final int profile = slot;
+            addRow(profiles, t("Perfil ", "Profile ") + slot, t("Gerenciar", "Manage"), v -> showProfile(profile));
+        }
         LinearLayout content = settingsGroup(root, "content", t("Jogo, saves e mods", "Game, saves & mods"),
                 t("Updates, backups e conteúdo", "Updates, backups and content"), false);
         LinearLayout support = settingsGroup(root, "support", t("Informações e suporte", "Information & support"),
-                t("Overlay, diagnóstico e comunidade", "Overlay, diagnostics and community"), false);
+                t("Diagnóstico e comunidade", "Diagnostics and community"), false);
 
         P4gTheme.section(content, t("Atualização do jogo", "Game update"));
         TextView updateHelp = new TextView(this);
@@ -504,7 +537,6 @@ public class Launcher extends Activity {
         });
         P4gTheme.section(content, t("Saves e mods", "Saves & mods"));
         LinearLayout diagnostics = settingsGroup(support, "logs", t("Logs e diagnóstico", "Logs & diagnostics"), "", false);
-        LinearLayout overlay = settingsGroup(support, "overlay", "Overlay", t("Estatísticas durante o jogo", "In-game statistics"), false);
         TextView diagnosticHelp = new TextView(this);
         diagnosticHelp.setText(t(
                 "Ative as estatísticas para registrar renderização, esperas e compilação de pipelines. Isso pode reduzir o desempenho. Jogue a mesma parte, exporte os logs e desative as estatísticas ao terminar.",
@@ -520,9 +552,7 @@ public class Launcher extends Activity {
                 v -> openExternal("https://discord.gg/yF6FtNK6rM"));
         addRow(support, t("Reportar um problema", "Report an issue"), t("Abrir", "Open"),
                 v -> openExternal("https://github.com/nxdevxz/p4g-android/issues/new/choose"));
-        boolean controlOptions = false;
         for (final Option o : options) {
-            if ("NX_TOUCH_SHOW".equals(o.key)) controlOptions = true;
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
@@ -547,13 +577,15 @@ public class Launcher extends Activity {
                 }
             });
             value.setTag(o);
-            boolean quickOption = o.key.equals("RESOLUTION") || o.key.equals("NX_STRETCH") ||
-                    o.key.equals("NX_FPS_CAP") || o.key.equals("NX_TOUCH_SHOW");
-            (quickOption ? quick :
-                    o.key.equals("NX_TRACE_PERF") ? diagnostics :
-                    o.key.equals("NX_SHOW_FPS") || o.key.startsWith("NX_OVERLAY_")
-                            ? overlay : controlOptions ? controls : graphics).addView(row);
+            String group = optionGroup(o.key);
+            (group.equals("quick") ? quick : group.equals("logs") ? diagnostics :
+                    group.equals("overlay") ? overlay : group.equals("controls") ? controls : graphics).addView(row);
         }
+        addResetRow(quick, "quick");
+        addResetRow(graphics, "graphics");
+        addResetRow(controls, "controls");
+        addResetRow(overlay, "overlay");
+        addResetRow(diagnostics, "logs");
         addDriverRow(graphics);
         addLogsRow(diagnostics);
 
@@ -668,6 +700,57 @@ public class Launcher extends Activity {
 
     boolean installingShaders;
 
+    static String optionGroup(String key) {
+        if (key.equals("RESOLUTION") || key.equals("NX_STRETCH") || key.equals("NX_FPS_CAP") || key.equals("NX_TOUCH_SHOW")) return "quick";
+        if (key.equals("NX_TRACE_PERF")) return "logs";
+        if (key.equals("NX_SHOW_FPS") || key.startsWith("NX_OVERLAY_")) return "overlay";
+        if (key.startsWith("NX_TOUCH_") || key.equals("NX_STICK_SENSITIVITY") || key.equals("NX_CAMERA_SENSITIVITY")) return "controls";
+        return "graphics";
+    }
+
+    private void addResetRow(LinearLayout parent, String group) {
+        addRow(parent, t("Opções desta seção", "Options in this section"), t("Restaurar", "Reset"),
+                v -> new AlertDialog.Builder(this)
+                        .setMessage(t("Restaurar as opções desta seção ao padrão?", "Reset this section's options to defaults?"))
+                        .setNegativeButton(t("Cancelar", "Cancel"), null)
+                        .setPositiveButton(t("Restaurar", "Reset"), (dialog, which) -> {
+                            for (Option o : options) if (optionGroup(o.key).equals(group)) o.pick = o.defaultPick;
+                            save();
+                            updateButtons(getWindow().getDecorView());
+                        }).show());
+    }
+
+    private void showProfile(int slot) {
+        SharedPreferences profile = getSharedPreferences("profile_" + slot, MODE_PRIVATE);
+        String title = t("Perfil ", "Profile ") + slot;
+        new AlertDialog.Builder(this).setTitle(title)
+                .setItems(new String[] {t("Carregar", "Load"), t("Salvar configuração atual", "Save current settings")}, (dialog, action) -> {
+                    if (action == 0) {
+                        if (!profile.getBoolean("saved", false)) {
+                            tell(title, t("Este perfil ainda está vazio.", "This profile is empty."));
+                            return;
+                        }
+                        for (Option o : options) {
+                            String value = profile.getString(o.key, o.values[o.defaultPick]);
+                            o.select(value);
+                        }
+                        save();
+                        updateButtons(getWindow().getDecorView());
+                    } else {
+                        new AlertDialog.Builder(this).setTitle(title)
+                                .setMessage(t("Salvar as opções atuais neste perfil? Substitui o perfil anterior.",
+                                        "Save current options here? This replaces the previous profile."))
+                                .setNegativeButton(t("Cancelar", "Cancel"), null)
+                                .setPositiveButton(t("Salvar", "Save"), (confirm, which) -> {
+                                    SharedPreferences.Editor edit = profile.edit().clear().putBoolean("saved", true);
+                                    for (Option o : options) edit.putString(o.key, o.values[o.pick]);
+                                    if (!edit.commit()) tell(title, t("Não foi possível salvar.", "Could not save."));
+                                    else Toast.makeText(this, t("Perfil salvo", "Profile saved"), Toast.LENGTH_SHORT).show();
+                                }).show();
+                    }
+                }).show();
+    }
+
     void installShadersAndPlay() {
         if (!hasAccess()) { askAccess(); return; }
         // Cache readiness was checked off the UI thread by refresh(). Missing stages
@@ -681,7 +764,7 @@ public class Launcher extends Activity {
         if (!readyForPlay) { refresh(); return; }
         try { SaveFiles.recover(); }
         catch (IOException e) { tell(t("Falha ao recuperar os saves", "Save recovery failed"), String.valueOf(e.getMessage())); return; }
-        save();
+        if (!save()) return;
         Intent i = new Intent(this, GameActivity.class);
         i.putExtra(ImportActivity.EXTRA_NAME, gameName());
         startActivity(i);
@@ -721,9 +804,7 @@ public class Launcher extends Activity {
                 readyForPlay = ready;
                 load();
                 for (Option o : options) {
-                    String value = config.get(o.key);
-                    for (int k = 0; k < o.values.length; ++k)
-                        if (o.values[k].equals(value)) o.pick = k;
+                    o.select(config.get(o.key));
                 }
                 build(ready);
                 updateButtons(getWindow().getDecorView());
@@ -1015,10 +1096,13 @@ public class Launcher extends Activity {
         config.putAll(readConfig(new File(dataDir(), "config.txt")));
     }
 
-    void save() {
-        if (!hasAccess()) return;
+    boolean save() {
+        if (!hasAccess()) { askAccess(); return false; }
         dataDir().mkdirs();
-        if (!dataDir().isDirectory()) return;
+        if (!dataDir().isDirectory()) {
+            tell(t("Erro", "Error"), t("Não foi possível abrir a pasta de configurações.", "Could not open the settings folder."));
+            return false;
+        }
         load();
         for (Option o : options) config.put(o.key, o.values[o.pick]);
         final String res = config.get("RESOLUTION");
@@ -1045,7 +1129,13 @@ public class Launcher extends Activity {
         }
         for (String k : new String[] {"RENDER_SCALE", "NX_ANISO_MAX"}) config.remove(k);
         for (String key : new String[] {"language", "GRAPHICS", "NX_GAMEPAD_LAYOUT"}) config.remove(key);
-        writeConfig(new File(dataDir(), "config.txt"), config);
+        if (writeConfig(new File(dataDir(), "config.txt"), config)) return true;
+        tell(t("Erro ao salvar", "Could not save"), t("Verifique o espaço livre e a permissão de armazenamento.",
+                "Check free space and storage permission."));
+        load();
+        for (Option o : options) o.select(config.get(o.key));
+        updateButtons(getWindow().getDecorView());
+        return false;
     }
 
     int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
@@ -1151,4 +1241,3 @@ public class Launcher extends Activity {
         root.addView(row);
     }
 }
-

@@ -16,6 +16,7 @@ public class GameActivity extends NativeActivity {
     private Object backCallback;
     private PerformanceOverlay performanceOverlay;
     static native long nativeFrames();
+    static native float[] nativeFrameTimes();
 
     @Override protected void onCreate(Bundle state) {
         // The installed payload is checked by the launcher; no source URI, NSP descriptor or keys are opened here.
