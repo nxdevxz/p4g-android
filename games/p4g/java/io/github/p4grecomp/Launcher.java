@@ -457,6 +457,8 @@ public class Launcher extends Activity {
             else { prefs().edit().remove("p4g_prepared_uri").apply(); prepare(); }
         });
         ScrollView setup = new ScrollView(this);
+        setup.setBackgroundColor(P4gTheme.BACKGROUND);
+        setup.setFillViewport(true);
         setup.addView(root);
         setContentView(setup);
         return;
