@@ -166,6 +166,7 @@ bool init() {
     if (is_xclipse()) log("nvn/vk: Samsung Xclipse GPU detected (forcing CPU BC texture decode for compatibility)");
     if (is_mali()) log("nvn/vk: ARM Mali GPU detected (emulating R11G11B10F as RGBA16F to prevent green/purple flickering)");
     if (is_adreno_8xx()) log("nvn/vk: Qualcomm Adreno 8xx GPU detected (disabling chunked submits to avoid battle hang)");
+    if (is_powervr()) log("nvn/vk: PowerVR GPU detected (unsafe pipelines skip the pipeline cache)");
     p_vkGetPhysicalDeviceMemoryProperties(g_physical, &g_memory);
     g_integrated = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
     // An integrated GPU shares the package's power budget with the CPU: ask the desktop for its performance profile
@@ -494,6 +495,9 @@ bool is_mali() {
 }
 bool is_adreno() {
     return std::strstr(g_device_props.deviceName, "Adreno") != nullptr || g_device_props.vendorID == 0x5143;
+}
+bool is_powervr() {
+    return std::strstr(g_device_props.deviceName, "PowerVR") != nullptr || g_device_props.vendorID == 0x1010;
 }
 bool is_adreno_8xx() {
     const char* p = std::strstr(g_device_props.deviceName, "Adreno");
@@ -892,3 +896,4 @@ void gpu_present(uint64_t texture, const int32_t* crop, uint64_t origin_ns) {
 }
 
 }  // namespace nx::nvn
+

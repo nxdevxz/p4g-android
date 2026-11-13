@@ -287,7 +287,13 @@ void to_nv12(const Decoder& d, const uint8_t* src, size_t size, std::vector<uint
     if (d.has_image && image_to_nv12(d, src, size, out)) return;
     const int32_t w = d.width, h = d.height;
     int32_t stride = d.codec_stride > 0 ? d.codec_stride : w, rows = d.codec_rows > 0 ? d.codec_rows : h;
-    if (d.color == kColorQcom32m && d.codec_stride <= 0) stride = (w + 127) & ~127, rows = (h + 31) & ~31;
+    const bool qcom = d.color == kColorQcom32m ||
+                      (!d.has_image && (d.codec_name.find(".qti.") != std::string::npos ||
+                                        d.codec_name.find(".qcom.") != std::string::npos));
+    if (qcom) {
+        if (d.codec_stride <= 0) stride = (w + 127) & ~127;
+        if (d.codec_rows <= 0) rows = (h + 31) & ~31;
+    }
     out.resize(size_t(w) * h * 3 / 2);
     const size_t y0 = size_t(d.crop_top) * stride + d.crop_left;
     for (int32_t r = 0; r < h; r++) {
@@ -1043,3 +1049,4 @@ NX_HLE("__movie_pump_thread", movie_pump_thread);
 #endif
 
 }  // namespace nx
+

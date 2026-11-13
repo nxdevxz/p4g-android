@@ -73,6 +73,7 @@ bool is_xclipse();
 bool is_mali();
 bool is_adreno();
 bool is_adreno_8xx();
+bool is_powervr();
 bool gpu_require_subgroup32();  // compute pipelines pin the subgroup size to 32 (nvn_pipeline.cpp)
 bool gpu_is_integrated();  // the device in use is an integrated GPU (set when the device is made)
 VkPhysicalDevice vk_physical();
@@ -271,6 +272,7 @@ void begin_render_pass(VkCommandBuffer cb, uint32_t count, const VkFormat* forma
 void forget_framebuffers(VkImageView view);
 void render_pass_log();
 void pass_end_only(VkCommandBuffer cb, int reason);  // draw_end_rendering without the pending clears
+void pass_end_for_transfer(VkCommandBuffer cb);  // end a pass in `cb` before recording a layout change
 bool pass_open_on(const Targets& t);
 VkExtent2D pass_extent();
 void pass_begin(VkCommandBuffer cb, const Targets& t);
@@ -357,3 +359,4 @@ void trace_nan_write_back(const uint8_t* from, const uint8_t* to, uint64_t size)
 }
 
 }  // namespace nx::nvn
+

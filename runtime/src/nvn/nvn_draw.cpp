@@ -47,6 +47,7 @@ namespace {
 
 bool g_rendering = false;
 bool g_render_pass = false;
+VkCommandBuffer g_pass_cb = VK_NULL_HANDLE;
 bool g_vertex_pending = false;  // a narrow pass-end barrier since the last one that covers vertex stages (G4)
 uint64_t g_pass_serial = 0, g_vertex_visible_at = 0;  // pass ends so far; the serial a full barrier covered
 uint64_t g_vertex_barriers = 0;
@@ -289,6 +290,7 @@ void begin_rendering(VkCommandBuffer cb, const Targets& t) {
     else
         p_vkCmdBeginRendering(cb, &ri);
     g_rendering = true;
+    g_pass_cb = cb;
     g_pass_written = cleared | fresh;  // as a clear inside the pass: sampling it needs it stored first
     g_pass_draws = 0;
     trace_pass("begin: cleared, fresh", t, cleared, fresh);
@@ -1142,6 +1144,7 @@ void pass_end_only(VkCommandBuffer cb, int reason) {
     else
         p_vkCmdEndRendering(cb);
     g_rendering = false;
+    g_bound = Bound{};
     // What the pass wrote is read by what follows (sampled, copied, loaded by the next pass), and what it sampled may
     // be rendered over next. The images stay GENERAL, so transition() records no barrier. Metal (MoltenVK) and the
     // Intel driver ordered passes anyway; NVIDIA overlaps them, and later passes read half-written tiles: the course
@@ -1176,6 +1179,10 @@ void draw_end_rendering(VkCommandBuffer cb, int reason) {  // and the pending cl
     clears_flush(cb);
 }
 bool pass_open() { return g_rendering; }
+void pass_end_for_transfer(VkCommandBuffer cb) {
+    if (!g_rendering || cb != g_pass_cb) return;
+    draw_end_rendering(cb, 5);
+}
 bool pass_open_on(const Targets& t) { return g_rendering && targets_same(g_pass, t); }
 VkExtent2D pass_extent() { return g_pass_extent; }
 void pass_begin(VkCommandBuffer cb, const Targets& t) { begin_rendering(cb, t); }
@@ -1206,3 +1213,4 @@ uint64_t draw_take_dump_request() {
 }
 
 }  // namespace nx::nvn
+
