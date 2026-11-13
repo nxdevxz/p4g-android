@@ -33,7 +33,7 @@
             android:launchMode="singleTop"
             android:exported="true"
             android:theme="@android:style/Theme.Material.NoActionBar"
-            android:screenOrientation="sensorLandscape">
+            android:screenOrientation="sensorPortrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -48,7 +48,7 @@
             android:process=":import"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:theme="@android:style/Theme.Material.NoActionBar"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="sensorPortrait"
             />
         <!-- Where the on-screen controls go (NX_TOUCH_LAYOUT), full screen like the game. -->
         <activity
@@ -70,3 +70,4 @@
         </activity>
     </application>
 </manifest>
+

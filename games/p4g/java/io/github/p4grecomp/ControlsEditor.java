@@ -51,13 +51,14 @@ public class ControlsEditor extends Activity {
     float sizeScale = 1;
     EditorView view;
 
-    String t(String spanish, String english) { return Lang.t(spanish, english); }
+    String t(String portuguese, String english) { return Lang.t(portuguese, english); }
 
     File configFile() { return new File(Launcher.dataDir(), "config.txt"); }
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        Lang.load(this);
         P4gTheme.apply(this);
         Map<String, String> config = Launcher.readConfig(configFile());
         try {
@@ -77,21 +78,21 @@ public class ControlsEditor extends Activity {
         middle.setOrientation(LinearLayout.VERTICAL);
         middle.setGravity(Gravity.CENTER_HORIZONTAL);
         TextView help = new TextView(this);
-        help.setText(t("Arrastra los controles a donde quieras.\nLa cruceta y A B X Y se mueven juntos. En rojo: se tocan.",
+        help.setText(t("Arraste os controles para onde quiser.\nO direcional e A B X Y se movem em grupo. Vermelho indica sobreposição.",
                 "Drag the controls where you want them.\nThe d-pad and A B X Y move together. Red: they touch."));
         help.setTextColor(P4gTheme.TEXT);
         help.setTextSize(15);
         help.setGravity(Gravity.CENTER);
         middle.addView(help);
-        Button visibility = button(t("Mostrar / ocultar botones", "Show / hide buttons"), Color.rgb(70, 70, 70));
+        Button visibility = button(t("Mostrar / ocultar botões", "Show / hide buttons"), Color.rgb(70, 70, 70));
         visibility.setOnClickListener(v -> showVisibility());
         middle.addView(visibility);
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER);
         bar.setPadding(0, dp(12), 0, 0);
-        Button restore = button(t("Restablecer", "Reset"), Color.rgb(70, 70, 70));
+        Button restore = button(t("Redefinir", "Reset"), Color.rgb(70, 70, 70));
         Button cancel = button(t("Cancelar", "Cancel"), Color.rgb(70, 70, 70));
-        Button save = button(t("Guardar", "Save"), P4gTheme.YELLOW);
+        Button save = button(t("Salvar", "Save"), P4gTheme.YELLOW);
         restore.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -112,10 +113,10 @@ public class ControlsEditor extends Activity {
                 if (hiddenButtons.isEmpty()) config.remove("NX_TOUCH_HIDDEN");
                 else config.put("NX_TOUCH_HIDDEN", hiddenButtons);
                 if (Launcher.writeConfig(configFile(), config)) {
-                    Toast.makeText(ControlsEditor.this, t("Controles guardados", "Controls saved"), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(ControlsEditor.this, t("Controles salvos", "Controls saved"), Toast.LENGTH_SHORT).show();
                     finish();
                 } else {
-                    Toast.makeText(ControlsEditor.this, t("No se pudo guardar config.txt", "Could not write config.txt"),
+                    Toast.makeText(ControlsEditor.this, t("Não foi possível salvar config.txt", "Could not write config.txt"),
                             Toast.LENGTH_LONG).show();
                 }
             }
@@ -187,11 +188,11 @@ public class ControlsEditor extends Activity {
         for (int i = 0, k = 0; i < NAMES.length; i++) {
             if (i == STICK) continue;
             indices[k] = i;
-            labels[k] = i >= 10 && i <= 13 ? t("Cruceta ", "D-pad ") + LABELS[i] : LABELS[i];
+            labels[k] = i >= 10 && i <= 13 ? t("Direcional ", "D-pad ") + LABELS[i] : LABELS[i];
             shown[k++] = !hidden[i];
         }
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(t("Botones visibles", "Visible buttons"))
+                .setTitle(t("Botões visíveis", "Visible buttons"))
                 .setMultiChoiceItems(labels, shown, (d, which, checked) -> shown[which] = checked)
                 .setPositiveButton(t("Aplicar", "Apply"), (d, which) -> {
                     for (int k = 0; k < indices.length; k++) hidden[indices[k]] = !shown[k];
@@ -332,3 +333,4 @@ public class ControlsEditor extends Activity {
         }
     }
 }
+

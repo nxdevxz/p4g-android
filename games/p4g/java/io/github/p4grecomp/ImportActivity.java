@@ -31,9 +31,11 @@ public class ImportActivity extends Activity {
     final Object commitLock = new Object();
     final Handler ui = new Handler(Looper.getMainLooper());
     int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+    String t(String portuguese, String english) { return Lang.t(portuguese, english); }
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        Lang.load(this);
         P4gTheme.apply(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         LinearLayout root = new LinearLayout(this);
@@ -41,7 +43,7 @@ public class ImportActivity extends Activity {
         root.setBackgroundColor(P4gTheme.BACKGROUND);
         root.setPadding(dp(32), dp(32), dp(32), dp(32));
         TextView title = new TextView(this);
-        title.setText("Preparing P4G");
+        title.setText(t("Preparando P4G", "Preparing P4G"));
         title.setTextColor(P4gTheme.YELLOW);
         title.setTextSize(26);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -56,7 +58,7 @@ public class ImportActivity extends Activity {
         status.setPadding(0, dp(16), 0, 0);
         root.addView(status);
         Button cancel = new Button(this);
-        cancel.setText("Cancel preparation");
+        cancel.setText(t("Cancelar preparação", "Cancel preparation"));
         cancel.setOnClickListener(v -> onBackPressed());
         root.addView(cancel);
         setContentView(root);
@@ -65,20 +67,22 @@ public class ImportActivity extends Activity {
 
     @Override public void onBackPressed() {
         if (!running) { setResult(RESULT_CANCELED); finish(); }
-        else new AlertDialog.Builder(this).setTitle("Cancel preparation?")
-            .setMessage("The temporary installation will be discarded. Any previous installation stays available.")
-            .setPositiveButton("Cancel preparation", (d, w) -> {
+        else new AlertDialog.Builder(this).setTitle(t("Cancelar preparação?", "Cancel preparation?"))
+            .setMessage(t("A instalação temporária será descartada. A instalação anterior continuará disponível.",
+                    "The temporary installation will be discarded. Any previous installation stays available."))
+            .setPositiveButton(t("Cancelar preparação", "Cancel preparation"), (d, w) -> {
                 synchronized (commitLock) {
                     if (publishing) return;
                     cancelRequested = true;
                     Importer.cancel();
                 }
-                status.setText("Cancelling... Waiting for the current operation to finish.");
-            }).setNegativeButton("Keep preparing", null).show();
+                status.setText(t("Cancelando… Aguarde a operação atual terminar.",
+                        "Cancelling... Waiting for the current operation to finish."));
+            }).setNegativeButton(t("Continuar preparando", "Keep preparing"), null).show();
     }
     void fail(String message) {
         status.setText(message);
-        new AlertDialog.Builder(this).setTitle("Preparation failed").setMessage(message)
+        new AlertDialog.Builder(this).setTitle(t("Falha na preparação", "Preparation failed")).setMessage(message)
             .setPositiveButton("OK", (d, w) -> { setResult(RESULT_CANCELED); finish(); })
             .setOnCancelListener(d -> { setResult(RESULT_CANCELED); finish(); }).show();
     }
@@ -290,3 +294,4 @@ public class ImportActivity extends Activity {
         }, 500);
     }
 }
+

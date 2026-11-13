@@ -2,6 +2,12 @@
 
 ## 0.4.7-beta (Unreleased)
 
+### Launcher
+
+- Redesigned the launcher for portrait orientation with Play at the top, visible quick settings and four compact categories for advanced options.
+- Kept the game and controls editor in landscape orientation, switching automatically when Play or Edit layout is opened.
+- Added a persistent launcher language selector for English and Brazilian Portuguese, including preparation and controls screens.
+
 ### Controls
 
 - Added support for generic USB and wired PS2-compatible controllers, including face buttons, shoulder buttons, triggers, Start, Select, Mode and stick clicks.

@@ -50,16 +50,16 @@ public class Launcher extends Activity {
     static final String DATA = "Persona 4 Golden";
 
     static final class Option {
-        final String key, es, en;
-        final String[] values, labelsEs, labelsEn;
+        final String key, pt, en;
+        final String[] values, labelsPt, labelsEn;
         int pick;
 
-        Option(String key, String es, String en, String[] values, String[] labelsEs, String[] labelsEn, int pick) {
+        Option(String key, String pt, String en, String[] values, String[] labelsPt, String[] labelsEn, int pick) {
             this.key = key;
-            this.es = es;
+            this.pt = pt;
             this.en = en;
             this.values = values;
-            this.labelsEs = labelsEs;
+            this.labelsPt = labelsPt;
             this.labelsEn = labelsEn;
             this.pick = pick;
         }
@@ -72,9 +72,9 @@ public class Launcher extends Activity {
     static final int PICK_ZIP = 1, PICK_FOLDER = 2, PICK_GAME = 3, PICK_KEYS = 4, PREPARE = 6, PICK_CPK = 7,
             PICK_DRIVER = 8, PICK_UPDATE = 9;
 
-    String t(String spanish, String english) { return Lang.t(spanish, english); }
+    String t(String portuguese, String english) { return Lang.t(portuguese, english); }
 
-    String label(Option o) { return t(o.labelsEs[o.pick], o.labelsEn[o.pick]); }
+    String label(Option o) { return t(o.labelsPt[o.pick], o.labelsEn[o.pick]); }
 
     static File dataDir() { return new File(Environment.getExternalStorageDirectory(), DATA); }
 
@@ -157,8 +157,8 @@ public class Launcher extends Activity {
         String name = displayName(uri);
         String lower = name.toLowerCase(Locale.ROOT);
         if (!lower.endsWith(".nsp") && !lower.endsWith(".xci")) {
-            tell(t("Archivo no válido", "Not a game file"),
-                    t("Elige el archivo .nsp o .xci del juego base (no el de la actualización).",
+            tell(t("Arquivo inválido", "Not a game file"),
+                    t("Escolha o arquivo .nsp ou .xci do jogo base, não o arquivo de atualização.",
                             "Choose the base game's .nsp or .xci file (not the update's)."));
             return;
         }
@@ -174,8 +174,8 @@ public class Launcher extends Activity {
         String name = displayName(uri);
         String lower = name.toLowerCase(Locale.ROOT);
         if (!lower.endsWith(".nsp")) {
-            tell(t("Archivo no válido", "Not an update file"),
-                    t("Elige la actualización de P4G en formato .nsp.",
+            tell(t("Arquivo inválido", "Not an update file"),
+                    t("Escolha a atualização do P4G em formato .nsp.",
                             "Choose the P4G update in .nsp format."));
             return;
         }
@@ -213,8 +213,8 @@ public class Launcher extends Activity {
             }
         }
         if (!prod && !hasKeys())
-            tell(t("Claves no válidas", "Not a keys file"),
-                    t("Ese archivo no tiene las claves (header_key). Elige el prod.keys de tu consola.",
+            tell(t("Chaves inválidas", "Not a keys file"),
+                    t("Esse arquivo não contém as chaves (header_key). Escolha o prod.keys do seu console.",
                             "That file has no keys (header_key). Choose your console's prod.keys."));
     }
 
@@ -230,59 +230,60 @@ public class Launcher extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        Lang.load(this);
         P4gTheme.apply(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        options.add(new Option("RESOLUTION", "Resolución de salida", "Output resolution",
+        options.add(new Option("RESOLUTION", "Resolução de saída", "Output resolution",
                 new String[] {"360p", "480p", "720p", "1080p"},
                 new String[] {"360p", "480p", "720p", "1080p"},
                 new String[] {"360p", "480p", "720p", "1080p"}, 2));
-        options.add(new Option("NX_STRETCH", "Formato de pantalla", "Screen format",
+        options.add(new Option("NX_STRETCH", "Formato da tela", "Screen format",
                 new String[] {"0", "16:10", "1"},
-                new String[] {"16:9", "16:10", "Estirar"},
+                new String[] {"16:9", "16:10", "Esticar"},
                 new String[] {"16:9", "16:10", "Stretch"}, 0));
-        options.add(new Option("NX_FPS_CAP", "Límite de FPS", "FPS limit", new String[] {"30", "45", "60"},
+        options.add(new Option("NX_FPS_CAP", "Limite de FPS", "FPS limit", new String[] {"30", "45", "60"},
                 new String[] {"30 FPS", "45 FPS", "60 FPS"},
                 new String[] {"30 FPS", "45 FPS", "60 FPS"}, 0));
         options.add(new Option("NX_SHOW_FPS", "Contador de FPS", "FPS counter", new String[] {"0", "1"},
-                new String[] {"Desactivado", "Activado"}, new String[] {"Off", "On"}, 0));
+                new String[] {"Desativado", "Ativado"}, new String[] {"Off", "On"}, 0));
         for (String metric : new String[] {"CPU", "GPU", "RAM"}) {
             options.add(new Option("NX_OVERLAY_" + metric, metric, metric, new String[] {"0", "1"},
-                    new String[] {"Desactivado", "Activado"}, new String[] {"Off", "On"}, 0));
+                    new String[] {"Desativado", "Ativado"}, new String[] {"Off", "On"}, 0));
         }
-        options.add(new Option("NX_TRACE_PERF", "Estadísticas detalladas de rendimiento", "Detailed performance logging",
-                new String[] {"0", "1"}, new String[] {"Desactivado", "Activado"},
+        options.add(new Option("NX_TRACE_PERF", "Estatísticas detalhadas de desempenho", "Detailed performance logging",
+                new String[] {"0", "1"}, new String[] {"Desativado", "Ativado"},
                 new String[] {"Off", "On"}, 0));
-        options.add(new Option("NX_PIPE_PREWARM", "Precalentamiento de pipelines (experimental)",
+        options.add(new Option("NX_PIPE_PREWARM", "Pré-compilação de pipelines (experimental)",
                 "Pipeline prewarming (experimental)", new String[] {"1", "2", "0"},
-                new String[] {"En segundo plano (recomendado)", "Agresivo (carga más larga)", "Desactivado"},
+                new String[] {"Em segundo plano (recomendado)", "Agressivo (carregamento maior)", "Desativado"},
                 new String[] {"Background (recommended)", "Aggressive (longer loading)", "Off"}, 0));
-        options.add(new Option("NX_AFFINITY", "Afinidad de CPU (experimental)", "CPU affinity (experimental)",
+        options.add(new Option("NX_AFFINITY", "Afinidade de CPU (experimental)", "CPU affinity (experimental)",
                 new String[] {"0", "2", "1"},
-                new String[] {"Sistema Android", "Optimizada (recomendada)", "Separar hilos de cuadro"},
+                new String[] {"Sistema Android", "Otimizada (recomendada)", "Separar threads de quadro"},
                 new String[] {"Android scheduler", "Optimized (recommended)", "Split frame threads"}, 1));
-        options.add(new Option("NX_P4G_MOTION_BLUR", "Desactivar desenfoque de movimiento (experimental)",
+        options.add(new Option("NX_P4G_MOTION_BLUR", "Desativar desfoque de movimento (experimental)",
                 "Disable motion blur (experimental)", new String[] {"1", "0"},
-                new String[] {"Desactivado", "Activado"}, new String[] {"Off", "On"}, 0));
-        options.add(new Option("NX_LOD_BIAS", "Nitidez de texturas 3D (experimental)",
+                new String[] {"Desativado", "Ativado"}, new String[] {"Off", "On"}, 0));
+        options.add(new Option("NX_LOD_BIAS", "Nitidez das texturas 3D (experimental)",
                 "3D texture sharpness (experimental)", new String[] {"0", "-0.5", "-1"},
-                new String[] {"Original", "Más nítidas", "Más nítidas (-1, prueba)"},
+                new String[] {"Original", "Mais nítidas", "Mais nítidas (-1, teste)"},
                 new String[] {"Original", "Sharper", "Sharper (-1, test)"}, 0));
-        options.add(new Option("NX_TOUCH_SHOW", "Controles táctiles", "On-screen controls", new String[] {"1", "0"},
-                new String[] {"Activados", "Desactivados"}, new String[] {"On", "Off"}, 0));
-        options.add(new Option("NX_TOUCH_LEFT_STICK_MODE", "Modo del analógico izquierdo", "Left analog mode",
-                new String[] {"fixed", "floating"}, new String[] {"Fijo", "Flotante"},
+        options.add(new Option("NX_TOUCH_SHOW", "Controles na tela", "On-screen controls", new String[] {"1", "0"},
+                new String[] {"Ativados", "Desativados"}, new String[] {"On", "Off"}, 0));
+        options.add(new Option("NX_TOUCH_LEFT_STICK_MODE", "Modo do analógico esquerdo", "Left analog mode",
+                new String[] {"fixed", "floating"}, new String[] {"Fixo", "Flutuante"},
                 new String[] {"Fixed", "Floating"}, 0));
-        options.add(new Option("NX_TOUCH_SIZE", "Tamaño de los botones", "Button size",
-                new String[] {"80", "100", "125"}, new String[] {"Pequeño", "Normal", "Grande"},
+        options.add(new Option("NX_TOUCH_SIZE", "Tamanho dos botões", "Button size",
+                new String[] {"80", "100", "125"}, new String[] {"Pequeno", "Normal", "Grande"},
                 new String[] {"Small", "Normal", "Large"}, 1));
-        options.add(new Option("NX_TOUCH_OPACITY", "Opacidad de los botones", "Button opacity",
-                new String[] {"50", "85", "100"}, new String[] {"Baja", "Normal", "Alta"},
+        options.add(new Option("NX_TOUCH_OPACITY", "Opacidade dos botões", "Button opacity",
+                new String[] {"50", "85", "100"}, new String[] {"Baixa", "Normal", "Alta"},
                 new String[] {"Low", "Normal", "High"}, 1));
-        options.add(new Option("NX_STICK_SENSITIVITY", "Sensibilidad palanca táctil", "Touch stick sensitivity",
+        options.add(new Option("NX_STICK_SENSITIVITY", "Sensibilidade do analógico", "Touch stick sensitivity",
                 new String[] {"50", "75", "100", "125", "150", "200"},
                 new String[] {"50%", "75%", "100%", "125%", "150%", "200%"},
                 new String[] {"50%", "75%", "100%", "125%", "150%", "200%"}, 2));
-        options.add(new Option("NX_CAMERA_SENSITIVITY", "Sensibilidad cámara táctil", "Touch camera sensitivity",
+        options.add(new Option("NX_CAMERA_SENSITIVITY", "Sensibilidade da câmera", "Touch camera sensitivity",
                 new String[] {"50", "75", "100", "125", "150", "200", "250"},
                 new String[] {"50%", "75%", "100%", "125%", "150%", "200%", "250%"},
                 new String[] {"50%", "75%", "100%", "125%", "150%", "200%", "250%"}, 2));
@@ -305,7 +306,7 @@ public class Launcher extends Activity {
         String error = intent.getStringExtra("game_error");
         if (error != null) {
             intent.removeExtra("game_error");
-            tell("Could not open the game", error);
+            tell(t("Não foi possível abrir o jogo", "Could not open the game"), error);
         }
     }
 
@@ -318,7 +319,7 @@ public class Launcher extends Activity {
         super.onDestroy();
     }
 
-    private LinearLayout settingsGroup(LinearLayout root, String key, String title, String subtitle) {
+    private LinearLayout settingsGroup(LinearLayout root, String key, String title, String subtitle, boolean open) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
@@ -345,9 +346,9 @@ public class Launcher extends Activity {
         card.addView(body);
         // A fresh visit to the launcher always starts compact. Keeping this state in
         // SharedPreferences made every drawer come back open after the user expanded it once.
-        body.setVisibility(View.GONE);
-        header.setText("+  " + title);
-        header.setContentDescription(title + ", expand");
+        body.setVisibility(open ? View.VISIBLE : View.GONE);
+        header.setText((open ? "−  " : "+  ") + title);
+        header.setContentDescription(title + (open ? ", collapse" : ", expand"));
         header.setOnClickListener(v -> {
             boolean open = body.getVisibility() != View.VISIBLE;
             body.setVisibility(open ? View.VISIBLE : View.GONE);
@@ -386,18 +387,25 @@ public class Launcher extends Activity {
         status.setPadding(0, dp(6), 0, dp(14));
         root.addView(status);
 
+        addRow(root, t("Idioma do launcher", "Launcher language"),
+                Lang.isPortuguese() ? "Português" : "English", v -> {
+                    Lang.toggle(this);
+                    build(readyForPlay);
+                    refresh();
+                });
+
         if (!ready) {
-        P4gTheme.section(root, t("Preparación", "Game setup"));
-        addRow(root, t("Archivo del juego (.nsp / .xci)", "Game file (.nsp / .xci)"), t("Elegir", "Choose"),
+        P4gTheme.section(root, t("Preparação do jogo", "Game setup"));
+        addRow(root, t("Arquivo do jogo (.nsp / .xci)", "Game file (.nsp / .xci)"), t("Escolher", "Choose"),
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
                         pick(PICK_GAME, "*/*", false);
                     }
                 });
-        addRow(root, t("Actualización de P4G .nsp (opcional)", "P4G update .nsp (optional)"),
-                updateUri() == null ? t("Elegir", "Choose") : updateName(), v -> pick(PICK_UPDATE, "*/*", false));
-        addRow(root, t("Claves (prod.keys)", "Keys (prod.keys)"), t("Elegir", "Choose"), new View.OnClickListener() {
+        addRow(root, t("Atualização do P4G .nsp (opcional)", "P4G update .nsp (optional)"),
+                updateUri() == null ? t("Escolher", "Choose") : updateName(), v -> pick(PICK_UPDATE, "*/*", false));
+        addRow(root, t("Chaves (prod.keys)", "Keys (prod.keys)"), t("Escolher", "Choose"), new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 pick(PICK_KEYS, "*/*", true);
@@ -408,7 +416,7 @@ public class Launcher extends Activity {
         play = new Button(this);
         P4gTheme.button(play, true);
         play.setAllCaps(false);
-        play.setText(t("Preparar", "Prepare"));
+        play.setText(t("Preparar jogo", "Prepare"));
         play.setTextSize(20);
         root.addView(play, new LinearLayout.LayoutParams(-1, dp(64)));
         play.setOnClickListener(v -> {
@@ -423,53 +431,63 @@ public class Launcher extends Activity {
         return;
         }
 
-        LinearLayout graphics = settingsGroup(root, "graphics", t("Imagen y rendimiento", "Graphics & performance"),
-                t("Resolución, FPS y driver", "Resolution, FPS and GPU driver"));
+        play = new Button(this);
+        play.setTextSize(20);
+        P4gTheme.button(play, true);
+        play.setText(t("Jogar", "Play"));
+        LinearLayout.LayoutParams playLayout = new LinearLayout.LayoutParams(-1, dp(64));
+        playLayout.bottomMargin = dp(14);
+        root.addView(play, playLayout);
+        play.setOnClickListener(v -> installShadersAndPlay());
+
+        LinearLayout quick = settingsGroup(root, "quick", t("Ajustes rápidos", "Quick settings"),
+                t("Tela, desempenho e controles", "Display, performance and controls"), true);
+        LinearLayout graphics = settingsGroup(root, "graphics", t("Gráficos avançados", "Advanced graphics"),
+                t("Driver e ajustes experimentais", "Driver and experimental settings"), false);
         LinearLayout controls = settingsGroup(root, "controls", t("Controles", "Controls"),
-                t("Visibilidad y posición de botones", "Button visibility and layout"));
-        LinearLayout gameUpdate = settingsGroup(root, "game_update", t("Actualización del juego", "Game update"),
-                t("Aplicar un update oficial .nsp", "Apply an official update .nsp"));
+                t("Toque, sensibilidade e posição", "Touch, sensitivity and layout"), false);
+        LinearLayout content = settingsGroup(root, "content", t("Jogo, saves e mods", "Game, saves & mods"),
+                t("Updates, backups e conteúdo", "Updates, backups and content"), false);
+        LinearLayout support = settingsGroup(root, "support", t("Informações e suporte", "Information & support"),
+                t("Overlay, diagnóstico e comunidade", "Overlay, diagnostics and community"), false);
+
+        P4gTheme.section(content, t("Atualização do jogo", "Game update"));
         TextView updateHelp = new TextView(this);
         updateHelp.setText(t(
-                "Para aplicar el update, selecciona otra vez el NSP/XCI original y el update NSP. El update de Switch depende de los bloques del juego base y no puede usar solamente los archivos ya extraídos. Después de preparar, ninguno de los NSP será necesario para jugar.",
+                "Para aplicar o update, selecione novamente o NSP/XCI original e o update NSP. A atualização depende de blocos do jogo base. Depois da preparação, os arquivos NSP não serão necessários para jogar.",
                 "To apply an update, select the original NSP/XCI again and the update NSP. A Switch update depends on blocks from the base game and cannot use only the already extracted files. Neither NSP is needed to play after preparation finishes."));
         updateHelp.setTextColor(Color.LTGRAY);
         updateHelp.setTextSize(14);
         updateHelp.setPadding(0, dp(4), 0, dp(8));
-        gameUpdate.addView(updateHelp);
-        addRow(gameUpdate, t("Juego base original (NSP/XCI)", "Original base game (NSP/XCI)"),
-                gameUri() == null ? t("Elegir", "Choose") : gameName(), v -> pick(PICK_GAME, "*/*", false));
-        addRow(gameUpdate, t("Archivo del update (.nsp)", "Update file (.nsp)"),
-                updateUri() == null ? t("Elegir", "Choose") : updateName(), v -> pick(PICK_UPDATE, "*/*", false));
-        addRow(gameUpdate, t("Aplicar update", "Apply update"), t("Preparar", "Prepare"), v -> {
+        content.addView(updateHelp);
+        addRow(content, t("Jogo base original (NSP/XCI)", "Original base game (NSP/XCI)"),
+                gameUri() == null ? t("Escolher", "Choose") : gameName(), v -> pick(PICK_GAME, "*/*", false));
+        addRow(content, t("Arquivo do update (.nsp)", "Update file (.nsp)"),
+                updateUri() == null ? t("Escolher", "Choose") : updateName(), v -> pick(PICK_UPDATE, "*/*", false));
+        addRow(content, t("Aplicar update", "Apply update"), t("Preparar", "Prepare"), v -> {
             if (!hasAccess()) askAccess();
             else if (gameUri() == null || !gameReadable()) pick(PICK_GAME, "*/*", false);
             else if (updateUri() == null || !updateReadable()) pick(PICK_UPDATE, "*/*", false);
             else if (!hasKeys()) pick(PICK_KEYS, "*/*", true);
             else prepare();
         });
-        LinearLayout files = settingsGroup(root, "files", t("Partidas y mods", "Saves & mods"),
-                t("Copias de seguridad y traducciones", "Backups, translations and mod manager"));
-        LinearLayout diagnostics = settingsGroup(root, "diagnostics", t("Diagnóstico", "Diagnostics"),
-                t("Exportar registros para reportar errores", "Export logs for bug reports"));
+        P4gTheme.section(content, t("Saves e mods", "Saves & mods"));
+        P4gTheme.section(support, t("Diagnóstico", "Diagnostics"));
         TextView diagnosticHelp = new TextView(this);
         diagnosticHelp.setText(t(
-                "Activa las estadísticas para registrar tiempos de renderizado, esperas y compilación de pipelines. Puede añadir sobrecarga. Los cambios se aplican al iniciar el juego de nuevo. Juega el mismo tramo y exporta los registros; desactiva las estadísticas al terminar. La afinidad no garantiza más FPS.",
+                "Ative as estatísticas para registrar renderização, esperas e compilação de pipelines. Isso pode reduzir o desempenho. Jogue a mesma parte, exporte os logs e desative as estatísticas ao terminar.",
                 "Enable detailed logging to record rendering times, waits and pipeline compilation. Logging can add overhead. Changes apply when you start the game again. Play the same section and export logs; turn logging off after testing. CPU affinity does not guarantee higher FPS."));
         diagnosticHelp.setTextColor(Color.LTGRAY);
         diagnosticHelp.setTextSize(14);
         diagnosticHelp.setPadding(0, dp(4), 0, dp(8));
-        diagnostics.addView(diagnosticHelp);
-        LinearLayout overlay = settingsGroup(root, "overlay", "Overlay",
-                t("Durante el juego. CPU: 100% = un núcleo; RAM: memoria residente del juego. GPU no disponible en todos los teléfonos.",
-                  "In-game stats. CPU: 100% = one core; RAM: game resident memory. GPU usage is unavailable on some phones."));
-        LinearLayout community = settingsGroup(root, "community", t("Comunidad", "Community"),
-                t("Proyecto, soporte y reportes", "Project, support and bug reports"));
-        addRow(community, "GitHub", t("Abrir", "Open"),
+        support.addView(diagnosticHelp);
+        P4gTheme.section(support, "Overlay");
+        P4gTheme.section(support, t("Comunidade", "Community"));
+        addRow(support, "GitHub", t("Abrir", "Open"),
                 v -> openExternal("https://github.com/nxdevxz/p4g-android"));
-        addRow(community, "Discord", t("Unirse", "Join"),
+        addRow(support, "Discord", t("Entrar", "Join"),
                 v -> openExternal("https://discord.gg/yF6FtNK6rM"));
-        addRow(community, t("Reportar un problema", "Report an issue"), t("Abrir", "Open"),
+        addRow(support, t("Reportar um problema", "Report an issue"), t("Abrir", "Open"),
                 v -> openExternal("https://github.com/nxdevxz/p4g-android/issues/new/choose"));
         boolean controlOptions = false;
         for (final Option o : options) {
@@ -479,7 +497,7 @@ public class Launcher extends Activity {
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(0, dp(4), 0, dp(4));
             TextView name = new TextView(this);
-            name.setText(t(o.es, o.en));
+            name.setText(t(o.pt, o.en));
             name.setTextColor(Color.WHITE);
             name.setTextSize(17);
             row.addView(name, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
@@ -498,19 +516,21 @@ public class Launcher extends Activity {
                 }
             });
             value.setTag(o);
-            (o.key.equals("NX_TRACE_PERF") ? diagnostics :
-                    o.key.equals("NX_SHOW_FPS") || o.key.startsWith("NX_OVERLAY_") ? overlay :
-                    controlOptions ? controls : graphics).addView(row);
+            boolean quickOption = o.key.equals("RESOLUTION") || o.key.equals("NX_STRETCH") ||
+                    o.key.equals("NX_FPS_CAP") || o.key.equals("NX_TOUCH_SHOW");
+            (quickOption ? quick :
+                    o.key.equals("NX_TRACE_PERF") || o.key.equals("NX_SHOW_FPS") || o.key.startsWith("NX_OVERLAY_")
+                            ? support : controlOptions ? controls : graphics).addView(row);
         }
         addDriverRow(graphics);
-        addLogsRow(diagnostics);
+        addLogsRow(support);
 
         LinearLayout edit = new LinearLayout(this);
         edit.setOrientation(LinearLayout.HORIZONTAL);
         edit.setGravity(Gravity.CENTER_VERTICAL);
         edit.setPadding(0, dp(4), 0, dp(4));
         TextView editName = new TextView(this);
-        editName.setText(t("Posición de los controles", "Controls position"));
+        editName.setText(t("Posição dos controles", "Controls position"));
         editName.setTextColor(Color.WHITE);
         editName.setTextSize(17);
         edit.addView(editName, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
@@ -518,7 +538,7 @@ public class Launcher extends Activity {
         P4gTheme.button(editButton, false);
         editButton.setAllCaps(false);
         editButton.setMinWidth(dp(120));
-        editButton.setText(t("Editar", "Edit layout"));
+        editButton.setText(t("Editar layout", "Edit layout"));
         edit.addView(editButton);
         editButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -539,7 +559,7 @@ public class Launcher extends Activity {
         saves.setGravity(Gravity.CENTER_VERTICAL);
         saves.setPadding(0, dp(4), 0, dp(4));
         TextView savesName = new TextView(this);
-        savesName.setText(t("Partidas guardadas", "Saves"));
+        savesName.setText(t("Saves", "Saves"));
         savesName.setTextColor(Color.WHITE);
         savesName.setTextSize(17);
         saves.addView(savesName, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
@@ -575,7 +595,7 @@ public class Launcher extends Activity {
                 exportSaves();
             }
         });
-        files.addView(saves);
+        content.addView(saves);
 
         // Translation CPK import
         LinearLayout transRow = new LinearLayout(this);
@@ -583,7 +603,7 @@ public class Launcher extends Activity {
         transRow.setGravity(Gravity.CENTER_VERTICAL);
         transRow.setPadding(0, dp(4), 0, dp(4));
         TextView transName = new TextView(this);
-        transName.setText(t("Traducción / Paquete (.cpk)", "Translation / CPK mod"));
+        transName.setText(t("Tradução / Mod CPK", "Translation / CPK mod"));
         transName.setTextColor(Color.WHITE);
         transName.setTextSize(17);
         transRow.addView(transName, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
@@ -603,22 +623,8 @@ public class Launcher extends Activity {
                 pick(PICK_CPK, "*/*", false);
             }
         });
-        files.addView(transRow);
-        addModsRow(files);
-
-        play = new Button(this);
-        play.setTextSize(20);
-        play.setAllCaps(false);
-        P4gTheme.button(play, true);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64));
-        lp.topMargin = dp(4);
-        lp.bottomMargin = dp(16);
-        // Keep Play after every settings drawer so it remains the final launcher action.
-        root.addView(play, lp);
-        play.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) { installShadersAndPlay(); }
-        });
+        content.addView(transRow);
+        addModsRow(content);
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(root);
@@ -639,7 +645,7 @@ public class Launcher extends Activity {
                 || (driverSelector != null && driverSelector.busy())) return;
         if (!readyForPlay) { refresh(); return; }
         try { SaveFiles.recover(); }
-        catch (IOException e) { tell("Save recovery failed", String.valueOf(e.getMessage())); return; }
+        catch (IOException e) { tell(t("Falha ao recuperar os saves", "Save recovery failed"), String.valueOf(e.getMessage())); return; }
         save();
         Intent i = new Intent(this, GameActivity.class);
         i.putExtra(ImportActivity.EXTRA_NAME, gameName());
@@ -650,13 +656,13 @@ public class Launcher extends Activity {
         if (installingShaders || importingSaves || isFinishing() || isDestroyed()) return;
         final int generation = ++refreshGeneration;
         play.setEnabled(false);
-        status.setText("Checking preparation...");
+        status.setText(t("Verificando a instalação…", "Checking preparation…"));
         new Thread(() -> {
             final boolean access = hasAccess();
             if (access && new File(dataDir(), "game/installed.tsv").isFile()) runOnUiThread(() -> {
                 if (generation == refreshGeneration && !isFinishing() && !isDestroyed()) {
                     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                    status.setText("Checking or moving installed game data...");
+                    status.setText(t("Verificando os dados instalados…", "Checking or moving installed game data…"));
                 }
             });
             boolean installedReady = false;
@@ -691,17 +697,18 @@ public class Launcher extends Activity {
                     String revision;
                     try { revision = InstalledGameFiles.revision(InstalledGameFiles.game(installationDir(this))); }
                     catch (Exception e) { revision = "unknown"; }
-                    status.setText("Game " + revision + " installed — NSP/XCI not required.\nNew effects may briefly pause while their shaders are prepared.");
-                    play.setText(t("Jugar", "Play"));
+                    status.setText(t("Jogo " + revision + " instalado — NSP/XCI não é necessário.\nNovos efeitos podem pausar brevemente durante a preparação dos shaders.",
+                            "Game " + revision + " installed — NSP/XCI not required.\nNew effects may briefly pause while their shaders are prepared."));
+                    play.setText(t("Jogar", "Play"));
                 } else {
-                    String game = gameUri() == null ? "No game selected" : gameName();
-                    status.setText(game + "\nprod.keys: " + (keys ? "selected" : "not selected") +
-                        (!access ? "\nAllow file access to prepare the game." :
-                         !readable && gameUri() != null ? "\nSelect the game file again." :
-                         readable && keys ? "\nInstall the game data to continue. Keep the NSP/XCI until installation finishes." : "") +
+                    String game = gameUri() == null ? t("Nenhum jogo selecionado", "No game selected") : gameName();
+                    status.setText(game + "\nprod.keys: " + (keys ? t("selecionado", "selected") : t("não selecionado", "not selected")) +
+                        (!access ? t("\nPermita o acesso aos arquivos para preparar o jogo.", "\nAllow file access to prepare the game.") :
+                         !readable && gameUri() != null ? t("\nSelecione novamente o arquivo do jogo.", "\nSelect the game file again.") :
+                         readable && keys ? t("\nInstale os dados para continuar. Mantenha o NSP/XCI até o fim da instalação.", "\nInstall the game data to continue. Keep the NSP/XCI until installation finishes.") : "") +
                         (storageError.isEmpty() ? "" : "\n" + storageError) +
-                        (shaderError.isEmpty() ? "" : "\nShader generation failed:\n" + shaderError));
-                    play.setText(t("Preparar", "Prepare"));
+                        (shaderError.isEmpty() ? "" : t("\nFalha ao gerar shaders:\n", "\nShader generation failed:\n") + shaderError));
+                    play.setText(t("Preparar jogo", "Prepare"));
                 }
             });
         }, "P4G-setup-check").start();
@@ -725,18 +732,18 @@ public class Launcher extends Activity {
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
         } catch (Exception e) {
-            tell(t("No se pudo abrir el enlace", "Could not open link"), url);
+            tell(t("Não foi possível abrir o link", "Could not open link"), url);
         }
     }
 
     void askImport() {
         new AlertDialog.Builder(this)
-                .setTitle(t("Importar partidas", "Import saves"))
-                .setMessage(t("Elige un archivo ZIP o una carpeta con partidas de Persona 4 Golden (por ejemplo, un ZIP exportado anteriormente). "
-                                + "Antes se guarda una copia de tus partidas actuales.",
+                .setTitle(t("Importar saves", "Import saves"))
+                .setMessage(t("Escolha um arquivo ZIP ou uma pasta com saves do Persona 4 Golden. "
+                                + "Seus saves atuais serão copiados antes da importação.",
                         "Pick a ZIP file or a folder with Persona 4 Golden saves (for example, a ZIP exported earlier). Your current saves "
                                 + "are copied aside first."))
-                .setPositiveButton(t("Archivo ZIP", "ZIP file"), new DialogInterface.OnClickListener() {
+                .setPositiveButton(t("Arquivo ZIP", "ZIP file"), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int which) {
                         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -747,7 +754,7 @@ public class Launcher extends Activity {
                         startActivityForResult(i, PICK_ZIP);
                     }
                 })
-                .setNeutralButton(t("Carpeta", "Folder"), new DialogInterface.OnClickListener() {
+                .setNeutralButton(t("Pasta", "Folder"), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int which) {
                         startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_FOLDER);
@@ -829,7 +836,7 @@ public class Launcher extends Activity {
     private DriverSelector driverSelector;
 
     private void addDriverRow(LinearLayout root) {
-        addRow(root, t("Driver gráfico", "GPU driver"), "Select", v -> showDrivers());
+        addRow(root, t("Driver gráfico", "GPU driver"), t("Selecionar", "Select"), v -> showDrivers());
     }
 
     private void showDrivers() {
@@ -891,12 +898,12 @@ public class Launcher extends Activity {
             runOnUiThread(() -> {
                 exportingLogs = false;
                 if (isFinishing() || isDestroyed()) return;
-                if (failure != null) tell(t("No se pudieron exportar los logs", "Could not export logs"), failure);
+                if (failure != null) tell(t("Não foi possível exportar os logs", "Could not export logs"), failure);
                 else new AlertDialog.Builder(this)
                         .setTitle(t("Logs exportados", "Logs exported"))
-                        .setMessage(Lang.f("Guardados en Descargas/%s.", "Saved to Downloads/%s.", file.name))
-                        .setPositiveButton(t("Compartir", "Share"), (dialog, which) -> shareLogs(file))
-                        .setNegativeButton(t("Cerrar", "Close"), null)
+                        .setMessage(Lang.f("Salvos em Downloads/%s.", "Saved to Downloads/%s.", file.name))
+                        .setPositiveButton(t("Compartilhar", "Share"), (dialog, which) -> shareLogs(file))
+                        .setNegativeButton(t("Fechar", "Close"), null)
                         .show();
             });
         }, "P4G-log-export").start();
@@ -908,7 +915,7 @@ public class Launcher extends Activity {
                 .putExtra(Intent.EXTRA_STREAM, file.uri)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         share.setClipData(ClipData.newRawUri(file.name, file.uri));
-        startActivity(Intent.createChooser(share, t("Compartir logs", "Share logs")));
+        startActivity(Intent.createChooser(share, t("Compartilhar logs", "Share logs")));
     }
 
     void exportSaves() {
@@ -916,12 +923,12 @@ public class Launcher extends Activity {
             java.io.File out = SaveFiles.export();
             // Listed at once by the file pickers and the Files app (written straight to disk, it would wait for a scan).
             if (out != null) android.media.MediaScannerConnection.scanFile(this, new String[] {out.getPath()}, null, null);
-            if (out == null) tell(t("No hay partidas", "No saves"), t("Todavía no hay partidas guardadas.", "There are no saves yet."));
-            else tell(t("Partidas exportadas", "Saves exported"),
-                    Lang.f("Guardadas en Descargas/%s. Se importan tal cual con el botón Importar.",
+            if (out == null) tell(t("Nenhum save", "No saves"), t("Ainda não há saves.", "There are no saves yet."));
+            else tell(t("Saves exportados", "Saves exported"),
+                    Lang.f("Salvos em Downloads/%s. Use o botão Importar para restaurá-los.",
                             "Saved to Download/%s. The Import button takes it back as is.", out.getName()));
         } catch (Exception e) {
-            tell(t("No se pudo exportar", "Export failed"), String.valueOf(e.getMessage()));
+            tell(t("Não foi possível exportar", "Export failed"), String.valueOf(e.getMessage()));
         }
     }
 
@@ -1013,7 +1020,7 @@ public class Launcher extends Activity {
     private ModManager modManager;
 
     private void addModsRow(LinearLayout root) {
-        addRow(root, "Mods and translations", "Manage", v -> {
+        addRow(root, t("Mods e traduções", "Mods and translations"), t("Gerenciar", "Manage"), v -> {
             if (!hasAccess()) { askAccess(); return; }
             if (importingCpk) return;
             if (modManager == null) modManager = new ModManager(this);
@@ -1026,8 +1033,8 @@ public class Launcher extends Activity {
         String name = displayName(uri);
         if (name == null || name.length() <= 4 || !name.toLowerCase(Locale.ROOT).endsWith(".cpk")
                 || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 || name.indexOf('\0') >= 0) {
-            tell(t("Error al importar CPK", "Could not import CPK"),
-                    t("Selecciona un archivo .cpk con su nombre original.",
+            tell(t("Erro ao importar CPK", "Could not import CPK"),
+                    t("Selecione um arquivo .cpk com o nome original.",
                             "Select a .cpk file with its original filename."));
             return;
         }
@@ -1055,9 +1062,9 @@ public class Launcher extends Activity {
                     tell(t("CPK instalado", "CPK installed"), installedPath
                             + (installedPath.startsWith("mods/_translation/")
                                 ? "\nEnable translation in Mods and translations to apply it."
-                                : t("\nSe aplica al volver a abrir el juego.", "\nApplied the next time you open the game.")));
+                                : t("\nSerá aplicado quando o jogo for aberto novamente.", "\nApplied the next time you open the game.")));
                 } else {
-                    tell(t("Error al importar CPK", "Could not import CPK"), failure);
+                    tell(t("Erro ao importar CPK", "Could not import CPK"), failure);
                 }
             });
         }, "P4G-cpk-import").start();
@@ -1110,3 +1117,4 @@ public class Launcher extends Activity {
         root.addView(row);
     }
 }
+
