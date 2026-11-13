@@ -66,6 +66,7 @@ public class Launcher extends Activity {
     }
 
     final List<Option> options = new ArrayList<>();
+    final Map<String, Boolean> drawerStates = new LinkedHashMap<>();
     final Map<String, String> config = new LinkedHashMap<>();
     TextView status;
     Button play;
@@ -230,6 +231,11 @@ public class Launcher extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        if (state != null) {
+            Bundle drawers = state.getBundle("drawers");
+            if (drawers != null)
+                for (String key : drawers.keySet()) drawerStates.put(key, drawers.getBoolean(key));
+        }
         Lang.load(this);
         applyLauncherOrientation();
         P4gTheme.apply(this);
@@ -311,6 +317,14 @@ public class Launcher extends Activity {
         }
     }
 
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        Bundle drawers = new Bundle();
+        for (Map.Entry<String, Boolean> entry : drawerStates.entrySet())
+            drawers.putBoolean(entry.getKey(), entry.getValue());
+        state.putBundle("drawers", drawers);
+    }
+
     boolean readyForPlay;
     void applyLauncherOrientation() {
         boolean landscape = getSharedPreferences("launcher", MODE_PRIVATE).getBoolean("landscape", false);
@@ -326,6 +340,8 @@ public class Launcher extends Activity {
     }
 
     private LinearLayout settingsGroup(LinearLayout root, String key, String title, String subtitle, boolean open) {
+        if (drawerStates.containsKey(key)) open = drawerStates.get(key);
+        drawerStates.put(key, open);
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
@@ -350,13 +366,13 @@ public class Launcher extends Activity {
         hint.setPadding(0, 0, 0, dp(8));
         body.addView(hint);
         card.addView(body, new LinearLayout.LayoutParams(-1, -2));
-        // A fresh visit to the launcher always starts compact. Keeping this state in
-        // SharedPreferences made every drawer come back open after the user expanded it once.
+        // Preserve expansion across refreshes and Activity recreation during this visit.
         body.setVisibility(open ? View.VISIBLE : View.GONE);
         header.setText((open ? "−  " : "+  ") + title);
         header.setContentDescription(title + (open ? ", collapse" : ", expand"));
         header.setOnClickListener(v -> {
             boolean expanded = body.getVisibility() != View.VISIBLE;
+            drawerStates.put(key, expanded);
             body.setVisibility(expanded ? View.VISIBLE : View.GONE);
             header.setText((expanded ? "−  " : "+  ") + title);
             header.setContentDescription(title + (expanded ? ", collapse" : ", expand"));
@@ -452,7 +468,6 @@ public class Launcher extends Activity {
         play.setText(t("Jogar", "Play"));
         LinearLayout.LayoutParams playLayout = new LinearLayout.LayoutParams(-1, dp(64));
         playLayout.bottomMargin = dp(14);
-        root.addView(play, playLayout);
         play.setOnClickListener(v -> installShadersAndPlay());
 
         LinearLayout quick = settingsGroup(root, "quick", t("Ajustes rápidos", "Quick settings"),
@@ -642,6 +657,7 @@ public class Launcher extends Activity {
         content.addView(transRow);
         addModsRow(content);
 
+        root.addView(play, playLayout);
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(P4gTheme.BACKGROUND);
         scroll.setFillViewport(true);
