@@ -517,7 +517,7 @@ jobs:
       - name: Upload P4G APK
         uses: actions/upload-artifact@v4
         with:
-          name: P4G-0.4.6-Beta
+          name: P4G-0.5.0-Beta
           path: build-apk/P4G.apk
           if-no-files-found: error
 
