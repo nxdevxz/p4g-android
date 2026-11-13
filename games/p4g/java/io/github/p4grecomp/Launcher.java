@@ -346,10 +346,10 @@ public class Launcher extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
         background.setColor(P4gTheme.PANEL);
-        background.setCornerRadius(dp(12));
+        background.setCornerRadius(dp(18));
         card.setBackground(background);
         LinearLayout.LayoutParams spacing = new LinearLayout.LayoutParams(-1, -2);
-        spacing.bottomMargin = dp(10);
+        spacing.bottomMargin = dp(12);
         root.addView(card, spacing);
         Button header = new Button(this);
         P4gTheme.button(header, false);
@@ -384,20 +384,19 @@ public class Launcher extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(P4gTheme.BACKGROUND);
-        int pad = dp(16);
+        int pad = dp(20);
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("PERSONA 4 GOLDEN");
-        title.setTextColor(P4gTheme.INK);
-        title.setBackgroundColor(P4gTheme.YELLOW);
-        title.setPadding(dp(12), dp(8), dp(12), dp(8));
-        title.setTextSize(24);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title);
+        title.setText("Persona 4 Golden");
+        title.setTextColor(P4gTheme.TEXT);
+        title.setPadding(0, dp(20), 0, dp(4));
+        title.setTextSize(28);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        root.addView(title, new LinearLayout.LayoutParams(-1, -2));
         TextView version = new TextView(this);
         version.setText("BETA  ·  0.4.6");
-        version.setTextColor(P4gTheme.YELLOW);
+        version.setTextColor(P4gTheme.MUTED);
         version.setTextSize(13);
         version.setTypeface(Typeface.DEFAULT_BOLD);
         version.setPadding(0, dp(10), 0, 0);
@@ -733,8 +732,7 @@ public class Launcher extends Activity {
                     String revision;
                     try { revision = InstalledGameFiles.revision(InstalledGameFiles.game(installationDir(this))); }
                     catch (Exception e) { revision = "unknown"; }
-                    status.setText(t("Jogo " + revision + " instalado — NSP/XCI não é necessário.\nNovos efeitos podem pausar brevemente durante a preparação dos shaders.",
-                            "Game " + revision + " installed — NSP/XCI not required.\nNew effects may briefly pause while their shaders are prepared."));
+                    status.setText(t("Pronto para jogar · " + revision, "Ready to play · " + revision));
                     play.setText(t("Jogar", "Play"));
                 } else {
                     String game = gameUri() == null ? t("Nenhum jogo selecionado", "No game selected") : gameName();
