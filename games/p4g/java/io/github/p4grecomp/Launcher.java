@@ -350,10 +350,10 @@ public class Launcher extends Activity {
         header.setText((open ? "−  " : "+  ") + title);
         header.setContentDescription(title + (open ? ", collapse" : ", expand"));
         header.setOnClickListener(v -> {
-            boolean open = body.getVisibility() != View.VISIBLE;
-            body.setVisibility(open ? View.VISIBLE : View.GONE);
-            header.setText((open ? "−  " : "+  ") + title);
-            header.setContentDescription(title + (open ? ", collapse" : ", expand"));
+            boolean expanded = body.getVisibility() != View.VISIBLE;
+            body.setVisibility(expanded ? View.VISIBLE : View.GONE);
+            header.setText((expanded ? "−  " : "+  ") + title);
+            header.setContentDescription(title + (expanded ? ", collapse" : ", expand"));
         });
         return body;
     }
