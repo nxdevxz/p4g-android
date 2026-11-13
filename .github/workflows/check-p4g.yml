@@ -1,0 +1,64 @@
+name: P4G source checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+      - name: Install compile dependencies
+        run: sdkmanager 'platforms;android-35' 'ndk;28.2.13676358'
+      - name: Compile all launcher Java and check settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/p4g-classes"
+          find games/p4g/java -name '*.java' > "$RUNNER_TEMP/p4g-sources.txt"
+          echo tests/LauncherSettingsTest.java >> "$RUNNER_TEMP/p4g-sources.txt"
+          javac -encoding UTF-8 --release 8 -cp "$ANDROID_HOME/platforms/android-35/android.jar" \
+            -d "$RUNNER_TEMP/p4g-classes" @"$RUNNER_TEMP/p4g-sources.txt"
+          java -cp "$RUNNER_TEMP/p4g-classes:$ANDROID_HOME/platforms/android-35/android.jar" \
+            io.github.p4grecomp.LauncherSettingsTest
+      - name: Test saves, mods and installation
+        run: python3 tests/test_app_flow.py
+      - name: Test native helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in nvn_origin nvn_frame_pacing android_surface_size input_stick prewarm_budget frame_history audio_ring; do
+            c++ -std=c++17 -Wall -Wextra -Werror -pthread -I runtime/src "tests/${test}_test.cpp" -o "$RUNNER_TEMP/$test"
+            "$RUNNER_TEMP/$test"
+          done
+          c++ -std=c++17 -Wall -Wextra -Werror -I games/p4g/import tests/p4g_maxwell_test.cpp -o "$RUNNER_TEMP/p4g-maxwell"
+          "$RUNNER_TEMP/p4g-maxwell"
+          c++ -std=c++20 -Wall -Wextra -Werror -pthread -I tests/audio_stubs -I runtime/include \
+            tests/android_audio_test.cpp -o "$RUNNER_TEMP/android-audio"
+          "$RUNNER_TEMP/android-audio"
+      - name: Check changed Android native code and overlay shader
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk="$ANDROID_HOME/ndk/28.2.13676358"
+          git clone --depth 1 --branch v1.4.357 https://github.com/KhronosGroup/Vulkan-Headers.git "$RUNNER_TEMP/vulkan-headers"
+          "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++" --target=aarch64-linux-android29 \
+            -std=c++20 -fsyntax-only -I runtime/include -I runtime/src -I "$RUNNER_TEMP/vulkan-headers/include" \
+            -I "$ndk/sources/android/native_app_glue" \
+            runtime/src/platform_android_audio.cpp runtime/src/platform_android.cpp \
+            runtime/src/nvn/nvn_pipeline.cpp runtime/src/vk_swapchain.cpp
+          "$ndk/shader-tools/linux-x86_64/glslc" -O --target-env=vulkan1.0 \
+            tools/shaders/present/overlay.frag -o "$RUNNER_TEMP/overlay.spv"
