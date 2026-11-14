@@ -326,7 +326,7 @@ struct Descriptors {
     std::vector<uint8_t> set_index;  // the set of each write (its dstSet is filled when the set is known)
     std::vector<VkDescriptorBufferInfo> buffers;
     std::vector<VkDescriptorImageInfo> images;
-    std::vector<SetWrite> key;  // scratch for the set cache
+    std::vector<SetWrite> keys[4];  // build compact cache keys directly; Vulkan writes only on misses
     uint64_t dynamic = 0;              // set 0 bindings given a dynamic offset (ProgramLayout::dynamic)
     uint64_t dynamic_ssbo = 0;
     uint32_t dynamic_ssbo_offset[64] = {};
@@ -350,6 +350,7 @@ CachedSet g_set_cache[kSetSlots];
 std::vector<SetWrite> g_set_arena;
 uint64_t g_set_generation = 1, g_set_hits = 0, g_set_misses = 0;
 uint32_t g_set_used = 0;
+CachedSet* g_last_set[4] = {};
 
 bool set_cache_on() {
     static const bool on = [] {
@@ -366,54 +367,75 @@ uint64_t handle_bits(H h) {
     return v;
 }
 
-// d.sets from the cache or newly made, the writes of the cached ones dropped and the rest pointed at their new sets.
+template <typename H>
+H bits_handle(uint64_t v) {
+    H h{};
+    std::memcpy(&h, &v, sizeof h < sizeof v ? sizeof h : sizeof v);
+    return h;
+}
+
+// Adapted from Chakeyy's direct descriptor keys: cache hits never construct Vulkan write structures.
 void resolve_sets(const ProgramLayout& layout) {
     Descriptors& d = g_sets;
+    // Reserve for every possible miss before storing pointers into these vectors.
+    const size_t buffers = d.keys[0].size() + d.keys[1].size();
+    const size_t images = d.keys[2].size() + d.keys[3].size();
+    d.buffers.reserve(buffers);
+    d.images.reserve(images);
+    d.writes.reserve(buffers + images);
     for (uint32_t k = 0; k < 4; k++) {
-        d.key.clear();
+        const auto& key = d.keys[k];
+        d.sets[k] = VK_NULL_HANDLE;
+        if (key.empty()) continue;
+        auto matches = [&](const CachedSet& c) {
+            return c.generation == g_set_generation && c.layout == layout.sets[k] && c.n == key.size() &&
+                   std::memcmp(&g_set_arena[c.at], key.data(), key.size() * sizeof(SetWrite)) == 0;
+        };
+        if (const CachedSet* last = g_last_set[k]; last && matches(*last)) {
+            d.sets[k] = last->set;
+            g_set_hits++;
+            continue;
+        }
         uint64_t h = handle_bits(layout.sets[k]) * 0x9E3779B97F4A7C15ull;
-        for (size_t i = 0; i < d.writes.size(); i++) {
-            if (d.set_index[i] != k) continue;
-            const VkWriteDescriptorSet& w = d.writes[i];
-            SetWrite e;
-            e.binding = w.dstBinding, e.type = uint32_t(w.descriptorType);
-            if (w.pBufferInfo)
-                e.a = handle_bits(w.pBufferInfo->buffer), e.b = w.pBufferInfo->offset, e.c = w.pBufferInfo->range;
-            else if (w.pImageInfo)
-                e.a = handle_bits(w.pImageInfo->imageView), e.b = handle_bits(w.pImageInfo->sampler),
-                e.c = uint64_t(w.pImageInfo->imageLayout);
+        for (const SetWrite& e : key)
             for (uint64_t v : {uint64_t(e.binding) << 32 | e.type, e.a, e.b, e.c})
                 h = (h ^ v) * 0x100000001B3ull, h ^= h >> 31;
-            d.key.push_back(e);
-        }
-        d.sets[k] = VK_NULL_HANDLE;
-        if (d.key.empty()) continue;
         CachedSet* slot = nullptr;
         for (uint32_t probe = uint32_t(h >> 32);; probe++) {
             CachedSet& c = g_set_cache[probe & (kSetSlots - 1)];
-            if (c.generation != g_set_generation) {
-                slot = &c;
-                break;
-            }
-            if (c.hash == h && c.layout == layout.sets[k] && c.n == d.key.size() &&
-                std::memcmp(&g_set_arena[c.at], d.key.data(), d.key.size() * sizeof(SetWrite)) == 0) {
-                d.sets[k] = c.set, g_set_hits++;
+            if (c.generation != g_set_generation) { slot = &c; break; }
+            if (c.hash == h && matches(c)) {
+                d.sets[k] = c.set;
+                g_last_set[k] = &c;
+                g_set_hits++;
                 break;
             }
         }
         if (d.sets[k]) continue;
-        d.sets[k] = descriptor_set(layout.sets[k]), g_set_misses++;
-        for (size_t i = 0; i < d.writes.size(); i++)
-            if (d.set_index[i] == k) d.writes[i].dstSet = d.sets[k];
-        if (!d.sets[k] || g_set_used >= kSetSlots / 2) continue;
-        *slot = {g_set_generation, h, layout.sets[k], uint32_t(g_set_arena.size()), uint32_t(d.key.size()), d.sets[k]};
-        g_set_arena.insert(g_set_arena.end(), d.key.begin(), d.key.end());
+        d.sets[k] = descriptor_set(layout.sets[k]);
+        g_set_misses++;
+        if (!d.sets[k]) continue;
+        for (const SetWrite& e : key) {
+            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w.dstSet = d.sets[k];
+            w.dstBinding = e.binding;
+            w.descriptorCount = 1;
+            w.descriptorType = VkDescriptorType(e.type);
+            if (k < 2) {
+                d.buffers.push_back({bits_handle<VkBuffer>(e.a), e.b, e.c});
+                w.pBufferInfo = &d.buffers.back();
+            } else {
+                d.images.push_back({bits_handle<VkSampler>(e.b), bits_handle<VkImageView>(e.a), VkImageLayout(e.c)});
+                w.pImageInfo = &d.images.back();
+            }
+            d.writes.push_back(w);
+        }
+        if (g_set_used >= kSetSlots / 2) continue;
+        *slot = {g_set_generation, h, layout.sets[k], uint32_t(g_set_arena.size()), uint32_t(key.size()), d.sets[k]};
+        g_set_arena.insert(g_set_arena.end(), key.begin(), key.end());
+        g_last_set[k] = slot;
         g_set_used++;
     }
-    size_t kept = 0;  // the writes of new sets only
-    for (size_t i = 0; i < d.writes.size(); i++)
-        if (d.writes[i].dstSet) d.writes[kept++] = d.writes[i];
-    d.writes.resize(kept);
 }
 
 }  // namespace
@@ -438,6 +460,7 @@ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shader
         d = Descriptors{};
     else
         d.writes.clear(), d.set_index.clear(), d.buffers.clear(), d.images.clear();
+    for (auto& key : d.keys) key.clear();
     d.dynamic = d.dynamic_ssbo = 0;
     const bool every_set = draw_slow(kSlowEmptySets), shared = !draw_slow(kSlowUploads), cached = set_cache_on();
     for (int k = 0; k < 4; k++) d.sets[k] = every_set ? descriptor_set(layout.sets[k]) : VK_NULL_HANDLE;
@@ -563,6 +586,10 @@ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shader
                 d.dynamic_ssbo_offset[b.binding] = uint32_t(info.offset);
                 info.offset = 0, type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
             }
+            if (cached) {
+                d.keys[b.set].push_back({b.binding, uint32_t(type), handle_bits(info.buffer), info.offset, info.range});
+                continue;
+            }
             buffers.push_back(info);
             VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
             w.dstSet = set_of(b.set);
@@ -582,6 +609,10 @@ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shader
         ii.imageView = r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout)
                                  : dummy_view(cb, b->image);
         ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth, g_state.depth.depth_test);
+        if (cached) {
+            d.keys[2].push_back({b->binding, uint32_t(b->type), handle_bits(ii.imageView), handle_bits(ii.sampler), uint64_t(ii.imageLayout)});
+            continue;
+        }
         images.push_back(ii);
         VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
         w.dstSet = set_of(2);
@@ -605,6 +636,10 @@ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shader
             VkDescriptorImageInfo ii{};
             ii.imageView = storage_view(cb, texture, b.image, texture ? &view : nullptr);
             ii.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            if (cached) {
+                d.keys[3].push_back({b.binding, uint32_t(b.type), handle_bits(ii.imageView), handle_bits(ii.sampler), uint64_t(ii.imageLayout)});
+                continue;
+            }
             images.push_back(ii);
             VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
             w.dstSet = set_of(3);
@@ -728,6 +763,7 @@ bool draw_inputs_shared(VkCommandBuffer cb, const ShaderInfo* vs, bool indexed, 
 void sets_begin_submit() {
     handles_reset();
     g_set_generation++, g_set_used = 0, g_set_arena.clear();
+    for (auto& last : g_last_set) last = nullptr;
     g_support_used = g_constants_used = 0;
     s_last_const_block[0] = s_last_const_block[1] = nullptr;
 }

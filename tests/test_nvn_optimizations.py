@@ -23,7 +23,7 @@ def main():
              '-I', str(ROOT / 'runtime/src'), '-I', str(ROOT / 'runtime/include'), '-I', str(headers)]
     if args.sanitize:
         flags += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
-    tests = ['nvn_dynamic_offsets', 'nvn_command_blob', 'nvn_command_pool', 'nvn_constants_cache']
+    tests = ['nvn_dynamic_offsets', 'nvn_command_blob', 'nvn_command_pool', 'nvn_constants_cache', 'nvn_descriptor_cache']
     with tempfile.TemporaryDirectory(prefix='p4g-nvn-tests-') as directory:
         for name in tests:
             binary = Path(directory) / name

@@ -62,3 +62,16 @@ scene. Keep the prior APK and back up saves before switching builds.
 
 The package and signing setup remain those of P4G. Whether an APK can install over an older build
 depends on using the same signing key; this port does not change the game's version or save format.
+
+## Second test: direct descriptor keys
+
+The second build adapts Chakeyy's direct descriptor-key construction. Each draw builds compact
+keys directly for its four descriptor sets. Vulkan write structures and buffer/image-info arrays
+are materialized only for cache misses. Identical consecutive sets use an exact comparison before
+hashing; the set layout and submit generation are included in the validity checks.
+Texture readiness checks, buffer uploads and compute synchronization still run as before.
+`NX_SET_CACHE=0` retains the original uncached descriptor-write path.
+
+A regression test covers buffer/image descriptor reconstruction, identical draws, changed views,
+layout changes, reuse of an older set, submit resets, empty sets and pointer stability beyond the
+old fixed vector reservation. This reduces repeated CPU work; device FPS impact remains unmeasured.
