@@ -118,6 +118,8 @@ Upload dedup_upload(const uint8_t* p, uint64_t size, uint64_t padded, uint64_t a
     return u;
 }
 
+uint64_t dedup_generation() { return g_generation; }
+
 void dedup_reset() { g_copies.clear(), g_generation++; }
 
 void dedup_invalidate(const uint8_t* p, uint64_t size) {

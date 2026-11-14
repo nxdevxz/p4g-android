@@ -99,6 +99,7 @@ extern UploadKind g_upload_kind;  // also: only guest buffers (not kUploadOther)
 bool cache_upload(const uint8_t* p, uint64_t size, uint64_t padded, uint64_t align, Upload& out);
 void cache_begin_submit();  // frees the copies retired submits read
 void cache_log();
+uint64_t dedup_generation();  // changes when the upload ring or submit is reset
 void dedup_reset();                                     // at each submit
 void dedup_invalidate(const uint8_t* p, uint64_t size);  // guest bytes written during the replay
 void dedup_log();

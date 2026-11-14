@@ -15,7 +15,7 @@ using namespace replay;
 void draw_command(VkCommandBuffer cb, const Cmd& c, const CmdList& list, const Targets& targets) {
     State& s = g_state;
     auto blob = [&](size_t size) -> const uint8_t* {
-        return c.blob < list.blobs.size() && list.blobs[c.blob].size() >= size ? list.blobs[c.blob].data() : nullptr;
+        return c.blob < list.blobs.size() && list.blob_size(c.blob) >= size ? list.blob_ptr(c.blob) : nullptr;
     };
     switch (c.op) {
         case Cmd::SetViewport:
@@ -115,18 +115,18 @@ void draw_command(VkCommandBuffer cb, const Cmd& c, const CmdList& list, const T
             static const uint64_t uub_from = uub ? std::strtoull(uub, nullptr, 10) : 0;
             static int uub_n = 0;
             if (uub && g_stats.done >= uub_from && uub_n++ < 1500 && c.blob < list.blobs.size()) {
-                const auto& b = list.blobs[c.blob];
+                const size_t bytes = list.blob_size(c.blob);
                 float f[8] = {};
-                std::memcpy(f, b.data(), std::min<size_t>(b.size(), sizeof f));
+                std::memcpy(f, list.blob_ptr(c.blob), std::min<size_t>(bytes, sizeof f));
                 log("uub before draw %llu: buffer %llx size %llu offset %llu data %zu bytes: %g %g %g %g | %g %g %g %g",
                     (unsigned long long)g_stats.done, (unsigned long long)c.a[0], (unsigned long long)c.a[1],
-                    (unsigned long long)off, b.size(), f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7]);
+                    (unsigned long long)off, bytes, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7]);
             }
             if (c.blob < list.blobs.size())
                 if (uint8_t* p = const_cast<uint8_t*>(guest_bytes(c.a[0] + off))) {
-                    std::memcpy(p, list.blobs[c.blob].data(), list.blobs[c.blob].size());
-                    dedup_invalidate(p, list.blobs[c.blob].size());
-                    written_cpu_write(p, list.blobs[c.blob].size());
+                    std::memcpy(p, list.blob_ptr(c.blob), list.blob_size(c.blob));
+                    dedup_invalidate(p, list.blob_size(c.blob));
+                    written_cpu_write(p, list.blob_size(c.blob));
                 }
             break;
         }

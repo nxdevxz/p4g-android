@@ -9,6 +9,7 @@
 #include <string>
 
 #include "nvn_draw_state.h"
+#include "nvn_dynamic_offsets.h"
 #include "nvn_ultrawide.h"
 
 namespace nx::nvn::replay {
@@ -201,11 +202,14 @@ struct ConstantsBlock {
     int hw = 0;         // the key: the Maxwell stage (vertex 0, fragment 4) and the stage's storage bindings,
     Range storage[16];  // all driver_constants reads outside compute
     std::array<uint8_t, 0x1000> bytes;
+    uint64_t upload_gen = 0;
+    VkDescriptorBufferInfo upload_info{};
 };
-constexpr size_t kBlocks = 32;  // more distinct ones in a submit: copied per draw, as before
+constexpr size_t kBlocks = 256;  // retain more immutable driver-constant blocks before falling back to per-draw copies
 std::vector<std::unique_ptr<SupportBlock>> g_support;
 std::vector<std::unique_ptr<ConstantsBlock>> g_constants;
 size_t g_support_used = 0, g_constants_used = 0;
+ConstantsBlock* s_last_const_block[2] = {};
 
 const SupportBuffer* support_block(float width, float height, float scale) {
     for (size_t k = 0; k < g_support_used; k++)
@@ -221,20 +225,41 @@ const SupportBuffer* support_block(float width, float height, float scale) {
     return &b.sb;
 }
 
-const uint8_t* constants_block(ShaderStage stage, int st) {
+ConstantsBlock* constants_block_obj(ShaderStage stage, int st) {
     if (stage == ShaderStage::Compute) return nullptr;  // its table also lists the uniform blocks; a few per frame
     int hw = stage == ShaderStage::Fragment ? 4 : 0;
     const Range* key = g_state.storage[st];
-    for (size_t k = 0; k < g_constants_used; k++)
-        if (g_constants[k]->hw == hw && std::memcmp(g_constants[k]->storage, key, sizeof g_constants[k]->storage) == 0)
-            return g_constants[k]->bytes.data();
+    if (st >= 0 && st < 2 && s_last_const_block[st] &&
+        s_last_const_block[st]->hw == hw &&
+        std::memcmp(s_last_const_block[st]->storage, key, sizeof(s_last_const_block[st]->storage)) == 0) {
+        return s_last_const_block[st];
+    }
+    for (size_t k = 0; k < g_constants_used; k++) {
+        if (g_constants[k]->hw == hw && std::memcmp(g_constants[k]->storage, key, sizeof g_constants[k]->storage) == 0) {
+            if (st >= 0 && st < 2) s_last_const_block[st] = g_constants[k].get();
+            return g_constants[k].get();
+        }
+    }
     if (g_constants_used == kBlocks) return nullptr;
     if (g_constants_used == g_constants.size()) g_constants.push_back(std::make_unique<ConstantsBlock>());
     ConstantsBlock& b = *g_constants[g_constants_used++];
     b.hw = hw;
     std::memcpy(b.storage, key, sizeof b.storage);
     b.bytes = driver_constants(stage, st);
-    return b.bytes.data();
+    b.upload_gen = 0;
+    b.upload_info = {};
+    if (st >= 0 && st < 2) s_last_const_block[st] = &b;
+    return &b;
+}
+
+VkDescriptorBufferInfo constants_upload(ConstantsBlock& block) {
+    if (!block.upload_info.buffer || block.upload_gen != dedup_generation()) {
+        Upload u = dedup_upload(block.bytes.data(), 0x1000, 0x1000, 256);
+        block.upload_info = {u.buffer, u.offset, 0x1000};
+        // Allocation itself can wrap the ring and reset dedup: capture the new generation.
+        block.upload_gen = dedup_generation();
+    }
+    return block.upload_info;
 }
 
 // The buffer a descriptor points to: `bytes` copied into the upload buffer (at least 16 bytes, zero padded).
@@ -301,8 +326,10 @@ struct Descriptors {
     std::vector<uint8_t> set_index;  // the set of each write (its dstSet is filled when the set is known)
     std::vector<VkDescriptorBufferInfo> buffers;
     std::vector<VkDescriptorImageInfo> images;
-    std::vector<SetWrite> key;  // scratch for the set cache
+    std::vector<SetWrite> keys[4];  // build compact cache keys directly; Vulkan writes only on misses
     uint64_t dynamic = 0;              // set 0 bindings given a dynamic offset (ProgramLayout::dynamic)
+    uint64_t dynamic_ssbo = 0;
+    uint32_t dynamic_ssbo_offset[64] = {};
     uint32_t dynamic_offset[64] = {};  // their ring offsets, by binding
 };
 Descriptors g_sets;
@@ -323,6 +350,7 @@ CachedSet g_set_cache[kSetSlots];
 std::vector<SetWrite> g_set_arena;
 uint64_t g_set_generation = 1, g_set_hits = 0, g_set_misses = 0;
 uint32_t g_set_used = 0;
+CachedSet* g_last_set[4] = {};
 
 bool set_cache_on() {
     static const bool on = [] {
@@ -339,54 +367,75 @@ uint64_t handle_bits(H h) {
     return v;
 }
 
-// d.sets from the cache or newly made, the writes of the cached ones dropped and the rest pointed at their new sets.
+template <typename H>
+H bits_handle(uint64_t v) {
+    H h{};
+    std::memcpy(&h, &v, sizeof h < sizeof v ? sizeof h : sizeof v);
+    return h;
+}
+
+// Adapted from Chakeyy's direct descriptor keys: cache hits never construct Vulkan write structures.
 void resolve_sets(const ProgramLayout& layout) {
     Descriptors& d = g_sets;
+    // Reserve for every possible miss before storing pointers into these vectors.
+    const size_t buffers = d.keys[0].size() + d.keys[1].size();
+    const size_t images = d.keys[2].size() + d.keys[3].size();
+    d.buffers.reserve(buffers);
+    d.images.reserve(images);
+    d.writes.reserve(buffers + images);
     for (uint32_t k = 0; k < 4; k++) {
-        d.key.clear();
+        const auto& key = d.keys[k];
+        d.sets[k] = VK_NULL_HANDLE;
+        if (key.empty()) continue;
+        auto matches = [&](const CachedSet& c) {
+            return c.generation == g_set_generation && c.layout == layout.sets[k] && c.n == key.size() &&
+                   std::memcmp(&g_set_arena[c.at], key.data(), key.size() * sizeof(SetWrite)) == 0;
+        };
+        if (const CachedSet* last = g_last_set[k]; last && matches(*last)) {
+            d.sets[k] = last->set;
+            g_set_hits++;
+            continue;
+        }
         uint64_t h = handle_bits(layout.sets[k]) * 0x9E3779B97F4A7C15ull;
-        for (size_t i = 0; i < d.writes.size(); i++) {
-            if (d.set_index[i] != k) continue;
-            const VkWriteDescriptorSet& w = d.writes[i];
-            SetWrite e;
-            e.binding = w.dstBinding, e.type = uint32_t(w.descriptorType);
-            if (w.pBufferInfo)
-                e.a = handle_bits(w.pBufferInfo->buffer), e.b = w.pBufferInfo->offset, e.c = w.pBufferInfo->range;
-            else if (w.pImageInfo)
-                e.a = handle_bits(w.pImageInfo->imageView), e.b = handle_bits(w.pImageInfo->sampler),
-                e.c = uint64_t(w.pImageInfo->imageLayout);
+        for (const SetWrite& e : key)
             for (uint64_t v : {uint64_t(e.binding) << 32 | e.type, e.a, e.b, e.c})
                 h = (h ^ v) * 0x100000001B3ull, h ^= h >> 31;
-            d.key.push_back(e);
-        }
-        d.sets[k] = VK_NULL_HANDLE;
-        if (d.key.empty()) continue;
         CachedSet* slot = nullptr;
         for (uint32_t probe = uint32_t(h >> 32);; probe++) {
             CachedSet& c = g_set_cache[probe & (kSetSlots - 1)];
-            if (c.generation != g_set_generation) {
-                slot = &c;
-                break;
-            }
-            if (c.hash == h && c.layout == layout.sets[k] && c.n == d.key.size() &&
-                std::memcmp(&g_set_arena[c.at], d.key.data(), d.key.size() * sizeof(SetWrite)) == 0) {
-                d.sets[k] = c.set, g_set_hits++;
+            if (c.generation != g_set_generation) { slot = &c; break; }
+            if (c.hash == h && matches(c)) {
+                d.sets[k] = c.set;
+                g_last_set[k] = &c;
+                g_set_hits++;
                 break;
             }
         }
         if (d.sets[k]) continue;
-        d.sets[k] = descriptor_set(layout.sets[k]), g_set_misses++;
-        for (size_t i = 0; i < d.writes.size(); i++)
-            if (d.set_index[i] == k) d.writes[i].dstSet = d.sets[k];
-        if (!d.sets[k] || g_set_used >= kSetSlots / 2) continue;
-        *slot = {g_set_generation, h, layout.sets[k], uint32_t(g_set_arena.size()), uint32_t(d.key.size()), d.sets[k]};
-        g_set_arena.insert(g_set_arena.end(), d.key.begin(), d.key.end());
+        d.sets[k] = descriptor_set(layout.sets[k]);
+        g_set_misses++;
+        if (!d.sets[k]) continue;
+        for (const SetWrite& e : key) {
+            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w.dstSet = d.sets[k];
+            w.dstBinding = e.binding;
+            w.descriptorCount = 1;
+            w.descriptorType = VkDescriptorType(e.type);
+            if (k < 2) {
+                d.buffers.push_back({bits_handle<VkBuffer>(e.a), e.b, e.c});
+                w.pBufferInfo = &d.buffers.back();
+            } else {
+                d.images.push_back({bits_handle<VkSampler>(e.b), bits_handle<VkImageView>(e.a), VkImageLayout(e.c)});
+                w.pImageInfo = &d.images.back();
+            }
+            d.writes.push_back(w);
+        }
+        if (g_set_used >= kSetSlots / 2) continue;
+        *slot = {g_set_generation, h, layout.sets[k], uint32_t(g_set_arena.size()), uint32_t(key.size()), d.sets[k]};
+        g_set_arena.insert(g_set_arena.end(), key.begin(), key.end());
+        g_last_set[k] = slot;
         g_set_used++;
     }
-    size_t kept = 0;  // the writes of new sets only
-    for (size_t i = 0; i < d.writes.size(); i++)
-        if (d.writes[i].dstSet) d.writes[kept++] = d.writes[i];
-    d.writes.resize(kept);
 }
 
 }  // namespace
@@ -411,7 +460,8 @@ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shader
         d = Descriptors{};
     else
         d.writes.clear(), d.set_index.clear(), d.buffers.clear(), d.images.clear();
-    d.dynamic = 0;
+    for (auto& key : d.keys) key.clear();
+    d.dynamic = d.dynamic_ssbo = 0;
     const bool every_set = draw_slow(kSlowEmptySets), shared = !draw_slow(kSlowUploads), cached = set_cache_on();
     for (int k = 0; k < 4; k++) d.sets[k] = every_set ? descriptor_set(layout.sets[k]) : VK_NULL_HANDLE;
     auto set_of = [&](uint32_t k) {  // with the set cache, made (or found) in bind_sets
@@ -516,9 +566,8 @@ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shader
                     break;
                 }
                 case NvnSource::DriverConstants: {
-                    if (const uint8_t* block = shared ? constants_block(s->stage, st) : nullptr) {
-                        Upload u = dedup_upload(block, 0x1000, 0x1000, 256);
-                        info = {u.buffer, u.offset, 0x1000};
+                    if (ConstantsBlock* block = shared ? constants_block_obj(s->stage, st) : nullptr) {
+                        info = constants_upload(*block);
                         break;
                     }
                     auto c0 = driver_constants(s->stage, st);
@@ -531,6 +580,15 @@ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shader
             if (b.set == 0 && b.binding < 64 && layout.dynamic >> b.binding & 1) {  // the offset goes with the bind
                 d.dynamic |= 1ull << b.binding, d.dynamic_offset[b.binding] = uint32_t(info.offset);
                 info.offset = 0, type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+            }
+            if (b.set == 1 && b.binding < 64 && layout.dynamic_ssbo >> b.binding & 1) {
+                d.dynamic_ssbo |= 1ull << b.binding;
+                d.dynamic_ssbo_offset[b.binding] = uint32_t(info.offset);
+                info.offset = 0, type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+            }
+            if (cached) {
+                d.keys[b.set].push_back({b.binding, uint32_t(type), handle_bits(info.buffer), info.offset, info.range});
+                continue;
             }
             buffers.push_back(info);
             VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
@@ -551,6 +609,10 @@ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shader
         ii.imageView = r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout)
                                  : dummy_view(cb, b->image);
         ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth, g_state.depth.depth_test);
+        if (cached) {
+            d.keys[2].push_back({b->binding, uint32_t(b->type), handle_bits(ii.imageView), handle_bits(ii.sampler), uint64_t(ii.imageLayout)});
+            continue;
+        }
         images.push_back(ii);
         VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
         w.dstSet = set_of(2);
@@ -574,6 +636,10 @@ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shader
             VkDescriptorImageInfo ii{};
             ii.imageView = storage_view(cb, texture, b.image, texture ? &view : nullptr);
             ii.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            if (cached) {
+                d.keys[3].push_back({b.binding, uint32_t(b.type), handle_bits(ii.imageView), handle_bits(ii.sampler), uint64_t(ii.imageLayout)});
+                continue;
+            }
             images.push_back(ii);
             VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
             w.dstSet = set_of(3);
@@ -593,15 +659,11 @@ void bind_sets(VkCommandBuffer cb, VkPipelineBindPoint point, const ProgramLayou
     Descriptors& d = g_sets;
     if (set_cache_on()) resolve_sets(layout);
     if (!d.writes.empty()) p_vkUpdateDescriptorSets(vk_device(), uint32_t(d.writes.size()), d.writes.data(), 0, nullptr);
-    // Set 0's dynamic offsets, in binding order (every dynamic binding of the layout; one no stage wrote: 0).
-    uint32_t offsets[64];
-    uint32_t noff = 0;
-    for (uint64_t m = layout.dynamic; m; m &= m - 1) {
-        uint32_t b = uint32_t(__builtin_ctzll(m));
-        offsets[noff++] = d.dynamic >> b & 1 ? d.dynamic_offset[b] : 0;
-    }
+    // Vulkan orders dynamic offsets by set, then binding. Keep the ranges for partial binds.
+    DynamicOffsets offsets(layout.dynamic, d.dynamic, d.dynamic_offset,
+                           layout.dynamic_ssbo, d.dynamic_ssbo, d.dynamic_ssbo_offset);
     if (draw_slow(kSlowEmptySets)) {
-        p_vkCmdBindDescriptorSets(cb, point, layout.layout, 0, 4, d.sets, noff, offsets);
+        p_vkCmdBindDescriptorSets(cb, point, layout.layout, 0, 4, d.sets, offsets.count(0, 4), offsets.data(0));
         return;
     }
     for (uint32_t k = 0; k < 4;) {
@@ -611,7 +673,7 @@ void bind_sets(VkCommandBuffer cb, VkPipelineBindPoint point, const ProgramLayou
         }
         uint32_t n = 1;
         while (k + n < 4 && d.sets[k + n]) n++;
-        p_vkCmdBindDescriptorSets(cb, point, layout.layout, k, n, d.sets + k, k == 0 ? noff : 0, offsets);
+        p_vkCmdBindDescriptorSets(cb, point, layout.layout, k, n, d.sets + k, offsets.count(k, n), offsets.data(k));
         if (gpu_profile_on()) gpu_profile_count(2);
         k += n;
     }
@@ -701,7 +763,9 @@ bool draw_inputs_shared(VkCommandBuffer cb, const ShaderInfo* vs, bool indexed, 
 void sets_begin_submit() {
     handles_reset();
     g_set_generation++, g_set_used = 0, g_set_arena.clear();
+    for (auto& last : g_last_set) last = nullptr;
     g_support_used = g_constants_used = 0;
+    s_last_const_block[0] = s_last_const_block[1] = nullptr;
 }
 
 void sets_log() {

@@ -9,6 +9,8 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
+#include <stdexcept>
 #include <atomic>
 #include <functional>
 #include <map>
@@ -327,9 +329,36 @@ struct Cmd {
     uint32_t blob = 0;  // index into CmdList::blobs (decoded state, inline data)
 };
 
+struct BlobSpan {
+    uint32_t offset = 0;
+    uint32_t size = 0;
+};
+
 struct CmdList {
     std::vector<Cmd> cmds;
-    std::vector<std::vector<uint8_t>> blobs;
+    std::vector<uint8_t> blob_bytes;
+    std::vector<BlobSpan> blobs;
+    // Aligned offsets preserve the typed vertex-state reads, even after odd-sized inline updates.
+    uint32_t append_blob(const void* data, size_t size) {
+        constexpr size_t alignment = alignof(std::max_align_t);
+        const size_t offset = (blob_bytes.size() + alignment - 1) & ~(alignment - 1);
+        if (offset > UINT32_MAX || size > UINT32_MAX - offset || blobs.size() >= UINT32_MAX)
+            throw std::length_error("NVN command blob arena exceeds 32-bit offsets");
+        blob_bytes.resize(offset + size);
+        if (size) std::memcpy(blob_bytes.data() + offset, data, size);
+        blobs.push_back({uint32_t(offset), uint32_t(size)});
+        return uint32_t(blobs.size() - 1);
+    }
+    const uint8_t* blob_ptr(uint32_t idx, size_t min_size = 0) const {
+        if (idx >= blobs.size()) return nullptr;
+        const BlobSpan& b = blobs[idx];
+        if (b.size < min_size || b.offset > blob_bytes.size() || b.size > blob_bytes.size() - b.offset)
+            return nullptr;
+        return blob_bytes.empty() ? nullptr : blob_bytes.data() + b.offset;
+    }
+    size_t blob_size(uint32_t idx) const {
+        return idx < blobs.size() ? blobs[idx].size : 0;
+    }
     uint64_t handle = 0;     // its NVNcommandHandle
     uint64_t epoch = 0;      // the texture epoch when its recording ended (nvn_incarnation.cpp): what its draws name
     uint32_t skinned = 0;    // NX_TRACE_SKINLISTS: binds of skinned programs (a vertex input at location 6) in it
