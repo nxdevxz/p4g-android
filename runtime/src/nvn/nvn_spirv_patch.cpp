@@ -14,6 +14,7 @@
 #include <string>
 
 #include "nvn_pipeline.h"
+#include "nvn_mali_spirv.h"
 
 namespace nx::nvn {
 
@@ -648,6 +649,11 @@ std::vector<uint32_t> patched_spirv(const ShaderInfo* s, const uint8_t* kinds, u
         return e && std::atoi(e) != 0;
     }();
     if (fc && s->stage != ShaderStage::Compute && preserve_inf_nan(code, next)) code.swap(next);
+    static const bool mali_opt = [] {
+        const char* e = std::getenv("NX_MALI_SPIRV_OPT");
+        return e && e[0] == '1';  // experimental: explicit opt-in, preserves P4G defaults
+    }();
+    if (mali_opt && is_mali() && optimize_spirv_mali(code, next)) code.swap(next);
     return code;
 }
 

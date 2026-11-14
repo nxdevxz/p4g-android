@@ -122,7 +122,12 @@ bool ubwc_flags() {
 uint32_t upload_memory_type(uint32_t bits) {
     const VkMemoryPropertyFlags plain = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     const char* e = std::getenv("NX_RING_CACHED");
-    if (e && e[0] == '1') {
+#if defined(__ANDROID__)
+    const bool try_cached = !e || e[0] != '0';
+#else
+    const bool try_cached = e && e[0] == '1';
+#endif
+    if (try_cached) {
         VkPhysicalDeviceMemoryProperties mp{};
         p_vkGetPhysicalDeviceMemoryProperties(vk_physical(), &mp);
         for (uint32_t k = 0; k < mp.memoryTypeCount; k++)

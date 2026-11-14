@@ -1075,7 +1075,7 @@ public class Launcher extends Activity {
             for (String line; (line = r.readLine()) != null; ) {
                 line = line.trim();
                 int eq = line.indexOf('=');
-                if (eq > 0) out.put(line.substring(0, eq), line.substring(eq + 1));
+                if (eq > 0) out.put(line.substring(0, eq).trim(), line.substring(eq + 1).trim());
             }
         } catch (Exception ignored) {
         }

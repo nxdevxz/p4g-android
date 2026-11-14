@@ -32,6 +32,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include "config_env.h"
 #include <mutex>
 #include <string>
 #include <vector>
@@ -890,20 +891,18 @@ extern "C" void android_main(android_app* app) {
     const bool p4g_installed = std::strcmp(nx::game::kInfo.id, "p4g") == 0 && installed && installed[0] == '1';
     // The installed payload can live in Android/data while this chosen root still holds saves, mods and config.
     g_root = !chosen.empty() && (has_data(chosen) || p4g_installed) ? chosen : has_data(own) ? own : shared;
-    // config.txt's NX_* lines become environment variables (the NVN layer reads its switches with getenv), without
-    // overriding a variable already set. Android defaults: handheld (720p, the lighter GPU load).
+    // config.txt's NX_* lines become environment variables (the NVN layer reads its switches with getenv), replacing
+    // stale values from a previous launch. Android defaults: handheld (720p, the lighter GPU load).
     {
         std::ifstream f(g_root + "/config.txt");
-        std::string line;
-        while (std::getline(f, line)) {
-            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
-            auto eq = line.find('=');
-            if (line.rfind("NX_", 0) == 0 && eq != std::string::npos) {
-                const std::string key = line.substr(0, eq);
-                const std::string value = line.substr(eq + 1);
-                // Launcher and NativeActivity share a process: update stretch even if a previous launch set it to "1".
-                setenv(key.c_str(), value.c_str(), key == "NX_STRETCH" ? 1 : 0);
-            }
+        load_config_environment(f, [](const std::string& key, const std::string& value) {
+            // Config is authoritative on each launch; repeated keys use the final value.
+            setenv(key.c_str(), value.c_str(), 1);
+        });
+        for (const char* key : {"NX_SET_CACHE", "NX_MAX_ANISO", "NX_MALI_SPIRV_OPT", "NX_BUFFER_CACHE",
+                                "NX_CLEARS_V2", "NX_IMAGE_STORAGE", "NX_EXP_NO_WB"}) {
+            const char* value = getenv(key);
+            nx::log("config: %s=%s", key, value ? value : "<default>");
         }
         // NX_HANDHELD=0 in config.txt (the launcher's TV mode): docked, 1080p. svc_am.cpp tests only whether the variable
         // exists, so "0" must remove it.

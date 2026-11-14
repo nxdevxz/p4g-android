@@ -58,6 +58,31 @@ VkPipelineCache pipeline_cache() {
         if (n > 0) data.resize(size_t(n)), data.resize(std::fread(data.data(), 1, data.size(), f));
         std::fclose(f);
     }
+    struct CacheHeader {
+        uint32_t headerSize;
+        uint32_t headerVersion;
+        uint32_t vendorID;
+        uint32_t deviceID;
+        uint8_t  pipelineCacheUUID[VK_UUID_SIZE];
+    };
+    bool valid_header = false;
+    if (data.size() >= sizeof(CacheHeader)) {
+        CacheHeader header{};
+        std::memcpy(&header, data.data(), sizeof header);
+        const auto* h = &header;
+        if (h->headerSize >= sizeof(CacheHeader) && h->headerSize <= data.size() &&
+            h->headerVersion == VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
+            h->vendorID == p.vendorID &&
+            h->deviceID == p.deviceID &&
+            std::memcmp(h->pipelineCacheUUID, p.pipelineCacheUUID, VK_UUID_SIZE) == 0) {
+            valid_header = true;
+        } else {
+            log("nvn/vk: pipeline cache %s has mismatched header, resetting", g_path.c_str());
+        }
+    }
+    if (!valid_header && !data.empty()) {
+        data.clear();
+    }
     VkPipelineCacheCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
     ci.initialDataSize = data.size();
     ci.pInitialData = data.empty() ? nullptr : data.data();
