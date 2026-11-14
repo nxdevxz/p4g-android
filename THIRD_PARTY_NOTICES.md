@@ -52,3 +52,12 @@ SOFTWARE.
 ## libadrenotools and linkernsbypass
 
 The custom Vulkan loader is adapted from [P5R Android v0.5.3](https://github.com/Brandon04Gonzalez/p5r-android/tree/v0.5.3). The vendored source and original license notices are under [third_party/libadrenotools](third_party/libadrenotools).
+
+
+## Chakeyy P5R NVN optimizations
+
+Selected command allocation/replay, program-layout lookup, dynamic storage descriptor, and driver-constant cache changes
+are adapted from [Chakeyy/p5r-android, commit 5f17826cab38eaeca12162abc4337ca0831a3a65](https://github.com/Chakeyy/p5r-android/commit/5f17826cab38eaeca12162abc4337ca0831a3a65)
+(`perf/universal-nvn-opt`), authored by Chakeyy. The source is under the MIT license with the BelmanteGu and Brandon
+copyright notices retained in this project's [LICENSE](LICENSE). See [the port and test notes](docs/chakeyy-nvn-port.md)
+for the scope and P4G-specific adaptations.

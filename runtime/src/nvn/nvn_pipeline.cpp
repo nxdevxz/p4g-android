@@ -263,10 +263,29 @@ bool descriptor_layout_counts(VkDescriptorSetLayout layout, uint32_t (&out)[16])
 
 const ProgramLayout& program_layout(const std::vector<const ShaderInfo*>& stages) {
     static std::map<std::vector<const ShaderInfo*>, ProgramLayout> cache;
-    static const std::pair<const std::vector<const ShaderInfo*>, ProgramLayout>* last = nullptr;  // entries stay
-    if (last && last->first == stages) return last->second;  // runs of draws use one program
+    struct LayoutMru {
+        const ShaderInfo* s0 = nullptr;
+        const ShaderInfo* s1 = nullptr;
+        size_t count = 0;
+        const ProgramLayout* pl = nullptr;
+    };
+    static thread_local LayoutMru mru[4]{};
+    static thread_local size_t mru_next = 0;
+    const size_t n = stages.size();
+    if (n == 1 || n == 2) {
+        const ShaderInfo* a0 = stages[0];
+        const ShaderInfo* a1 = n == 2 ? stages[1] : nullptr;
+        for (const LayoutMru& e : mru)
+            if (e.pl && e.count == n && e.s0 == a0 && e.s1 == a1) return *e.pl;
+    }
     auto it = cache.find(stages);
-    if (it != cache.end()) return (last = &*it)->second;
+    if (it != cache.end()) {
+        if (n == 1 || n == 2) {
+            mru[mru_next] = {stages[0], n == 2 ? stages[1] : nullptr, n, &it->second};
+            mru_next = (mru_next + 1) & 3;
+        }
+        return it->second;
+    }
     std::map<uint32_t, VkDescriptorSetLayoutBinding> sets[4];
     for (const ShaderInfo* s : stages)
         for (const DescriptorBinding& b : s->refl.bindings) {
@@ -301,6 +320,27 @@ const ProgramLayout& program_layout(const std::vector<const ShaderInfo*>& stages
             if (n < 64 && dynamic >> n & 1) b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
         pl.dynamic = dynamic;
     }
+    static const uint32_t max_dynamic_ssbo = [] {
+        const char* e = std::getenv("NX_DYNAMIC_SSBO");
+#if defined(__ANDROID__)
+        if (e && e[0] == '0') return 0u;
+#else
+        if (!e || e[0] != '1') return 0u;
+#endif
+        VkPhysicalDeviceProperties p{};
+        p_vkGetPhysicalDeviceProperties(vk_physical(), &p);
+        log("nvn/vk: storage buffers bound with dynamic offsets (up to %u per layout)",
+            p.limits.maxDescriptorSetStorageBuffersDynamic);
+        return p.limits.maxDescriptorSetStorageBuffersDynamic;
+    }();
+    uint64_t dynamic_ssbo = 0;
+    for (auto& [n, b] : sets[1])
+        if (b.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER && b.descriptorCount == 1 && n < 64) dynamic_ssbo |= 1ull << n;
+    if (dynamic_ssbo && uint32_t(__builtin_popcountll(dynamic_ssbo)) <= max_dynamic_ssbo) {
+        for (auto& [n, b] : sets[1])
+            if (n < 64 && dynamic_ssbo >> n & 1) b.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+        pl.dynamic_ssbo = dynamic_ssbo;
+    }
     for (int k = 0; k < 4; k++) {
         std::vector<VkDescriptorSetLayoutBinding> v;
         for (auto& [n, b] : sets[k]) v.push_back(b);
@@ -310,7 +350,12 @@ const ProgramLayout& program_layout(const std::vector<const ShaderInfo*>& stages
     ci.setLayoutCount = 4;
     ci.pSetLayouts = pl.sets;
     p_vkCreatePipelineLayout(vk_device(), &ci, nullptr, &pl.layout);
-    return cache[stages] = pl;
+    const ProgramLayout& result = cache[stages] = pl;
+    if (n == 1 || n == 2) {
+        mru[mru_next] = {stages[0], n == 2 ? stages[1] : nullptr, n, &result};
+        mru_next = (mru_next + 1) & 3;
+    }
+    return result;
 }
 
 // ---- graphics pipelines ---------------------------------------------------------------------------------------------

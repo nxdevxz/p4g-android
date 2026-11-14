@@ -3,6 +3,8 @@ name: P4G Beta
 
 on:
   workflow_dispatch:
+  push:
+    branches: [perf/chakeyy-nvn-p4g]
 
 permissions:
   contents: read
@@ -90,6 +92,10 @@ jobs:
           test -f vulkan-headers/Include/vulkan/vulkan.h
 
           echo "Vulkan Headers ready."
+
+      - name: Test NVN command and descriptor reuse
+        shell: bash
+        run: python3 tests/test_nvn_optimizations.py --vulkan-include vulkan-headers/include --sanitize
 
       - name: Set up .NET shader compiler build
         uses: actions/setup-dotnet@v4
